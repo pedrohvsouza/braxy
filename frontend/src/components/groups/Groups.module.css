@@ -1,0 +1,118 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form > :global(.btn) {
+  align-self: flex-end;
+}
+
+.picker {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--bg-deep);
+}
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pick:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pick input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.groupTop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.groupTitle {
+  font-size: 1.15rem;
+}
+
+.renameForm {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.addBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.addBox > :global(.btn) {
+  align-self: flex-end;
+}
+
+.subTitle {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.memberMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.memberMain:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.crown {
+  color: var(--yellow);
+  font-size: 0.8rem;
+}
