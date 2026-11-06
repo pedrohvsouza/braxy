@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Pre-flight deployment checks (secrets, database URL, writable dirs).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ -x ./bin/saci-doctor ]; then
+  exec ./bin/saci-doctor "$@"
+fi
+exec "${CRYSTAL_BIN:-crystal}" run script/doctor.cr -- "$@"

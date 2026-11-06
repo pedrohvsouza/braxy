@@ -1,0 +1,43 @@
+# config/server.yml — HTTP server settings per environment (G138).
+#
+# Loaded by config/server.cr through Saci::Deploy::ServerConfig.
+# Durations are seconds (or "250ms"/"5s"/"2m" strings).
+#
+# Crystal's stdlib HTTP server has no Puma-style cluster/workers:
+# `threads` only takes effect when compiled with -Dexecution_context
+# (`saci serve --mt`). Run multiple processes for more capacity.
+development:
+  host: 127.0.0.1
+  port: 3000
+  threads: 1
+  reuse_port: false
+  keep_alive_timeout: 5
+  request_timeout: 30
+  shutdown_timeout: 10
+
+test:
+  host: 127.0.0.1
+  port: 3000
+  threads: 1
+  reuse_port: false
+  keep_alive_timeout: 5
+  request_timeout: 30
+  shutdown_timeout: 5
+
+staging:
+  host: 0.0.0.0
+  port: 3000
+  threads: 2
+  reuse_port: false
+  keep_alive_timeout: 5
+  request_timeout: 30
+  shutdown_timeout: 15
+
+production:
+  host: 0.0.0.0
+  port: 3000
+  threads: 4
+  reuse_port: true
+  keep_alive_timeout: 5
+  request_timeout: 30
+  shutdown_timeout: 15

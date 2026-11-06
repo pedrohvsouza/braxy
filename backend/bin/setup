@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# First-run setup: dependencies, schema, seed data.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if ! command -v shards >/dev/null 2>&1; then
+  echo "error: shards is required to set up this app." >&2
+  exit 1
+fi
+
+shards install
+"${SACI_BIN:-saci}" db:migrate
+
+if [ "${SKIP_SEED:-0}" != "1" ]; then
+  "${SACI_BIN:-saci}" db:seed
+fi
+
+echo "Setup complete. Start the app with: bin/dev"

@@ -1,0 +1,29 @@
+.git
+.github
+.crystal
+.shards
+.devcontainer
+.kamal
+deploy
+docs
+lib
+spec
+tmp
+log
+storage
+vendor
+db/*.db
+db/*.db-*
+config/master.key
+*.dwarf
+.DS_Store
+
+# Keep binstubs in the context (the entrypoint is copied into the
+# runtime image); ignore release binaries produced by local builds.
+bin/*
+!bin/docker-entrypoint
+!bin/saci
+!bin/setup
+!bin/dev
+!bin/ci
+!bin/thrust

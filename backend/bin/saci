@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Project-local Saci binstub. Forwards all arguments (including `--`).
+set -euo pipefail
+exec "${SACI_BIN:-saci}" "$@"

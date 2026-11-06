@@ -1,0 +1,5 @@
+en:
+  hello: "Hello from Saci"
+  items:
+    one: "%{count} item"
+    other: "%{count} items"

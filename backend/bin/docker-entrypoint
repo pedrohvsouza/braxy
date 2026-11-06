@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ "${SKIP_DB_PREPARE:-0}" != "1" ]; then
+  if [ -x "./bin/saci-migrate" ]; then
+    ./bin/saci-migrate up
+  elif command -v saci >/dev/null 2>&1; then
+    saci db:migrate
+  else
+    echo "warning: no migrator found; set SKIP_DB_PREPARE=1 if this is intentional." >&2
+  fi
+fi
+
+if [ "$#" -eq 0 ]; then
+  echo "usage: bin/docker-entrypoint COMMAND [ARGS...]" >&2
+  exit 1
+fi
+exec "$@"

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Development server with hot reload.
+set -euo pipefail
+exec "${SACI_BIN:-saci}" serve --watch "$@"

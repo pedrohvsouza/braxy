@@ -1,0 +1,22 @@
+name: backend
+version: 0.1.0
+
+description: Braxy chat backend (Saci).
+
+authors:
+  - Pedro Henrique
+
+crystal: ">= 1.0.0"
+
+dependencies:
+  saci:
+    path: ../../saci
+  pg:
+    github: will/crystal-pg
+    version: "~> 0.30.0"
+
+targets:
+  backend:
+    main: src/backend.cr
+
+license: MIT
