@@ -1,0 +1,52 @@
+# Route table shared by the server boot file and the specs.
+module BraxyRoutes
+  def self.build : Saci::Router
+    Saci::Router.new.draw do |r|
+      r.get "/up", HealthController, :show
+
+      r.get "/api/session", Api::SessionsController, :show
+      r.post "/api/session", Api::SessionsController, :create
+      r.delete "/api/session", Api::SessionsController, :destroy
+      r.post "/api/signup", Api::RegistrationsController, :create
+
+      r.patch "/api/me", Api::ProfilesController, :update
+      r.patch "/api/me/password", Api::ProfilesController, :password
+      r.post "/api/me/avatar", Api::ProfilesController, :avatar
+
+      r.get "/api/users", Api::UsersController, :index
+      r.get "/api/users/:username", Api::UsersController, :show
+
+      r.get "/api/friendships", Api::FriendshipsController, :index
+      r.post "/api/friendships", Api::FriendshipsController, :create
+      r.post "/api/friendships/:id/accept", Api::FriendshipsController, :accept
+      r.delete "/api/friendships/:id", Api::FriendshipsController, :destroy
+
+      r.get "/api/sidebar", Api::ConversationsController, :sidebar
+      r.post "/api/conversations", Api::ConversationsController, :create
+      r.post "/api/conversations/dm", Api::ConversationsController, :dm
+      r.get "/api/conversations/:id", Api::ConversationsController, :show
+      r.patch "/api/conversations/:id", Api::ConversationsController, :update
+      r.post "/api/conversations/:id/avatar", Api::ConversationsController, :avatar
+      r.post "/api/conversations/:id/members", Api::ConversationsController, :add_members
+      r.delete "/api/conversations/:id/members/:user_id", Api::ConversationsController, :remove_member
+      r.post "/api/conversations/:id/read", Api::ConversationsController, :read
+
+      r.get "/api/conversations/:id/messages", Api::MessagesController, :index
+      r.post "/api/conversations/:id/messages", Api::MessagesController, :create
+      r.patch "/api/messages/:id", Api::MessagesController, :update
+      r.delete "/api/messages/:id", Api::MessagesController, :destroy
+      r.post "/api/messages/:id/reactions", Api::MessagesController, :react
+
+      r.post "/api/uploads", Api::UploadsController, :create
+      r.get "/api/files/:key", Api::UploadsController, :show
+
+      r.get "/api/notifications", Api::NotificationsController, :index
+      r.post "/api/notifications/read_all", Api::NotificationsController, :read_all
+      r.post "/api/notifications/:id/read", Api::NotificationsController, :read
+
+      r.get "/api/stats", Api::StatsController, :show
+
+      r.cable "/cable", ChatChannel
+    end
+  end
+end
