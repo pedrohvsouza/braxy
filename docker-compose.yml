@@ -1,0 +1,122 @@
+# Braxy — local development stack.
+#
+#   docker compose up        # everything: pg, redis, s3, backend, frontend
+#   http://localhost:5173    # app (Vite proxies /api and /cable to the backend)
+#
+# The Saci framework is mounted from ../saci so framework changes are picked
+# up by the backend's `saci serve --watch` loop without publishing a release.
+name: braxy
+
+x-backend-env: &backend-env
+  APP_ENV: development
+  HOST: 0.0.0.0
+  PORT: "3000"
+  DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_development
+  TEST_DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_test
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY_BASE: dev-only-secret-key-base-change-me-0123456789abcdef0123456789
+  APP_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+  S3_BUCKET: braxy
+  S3_REGION: us-east-1
+  S3_ENDPOINT: http://s3:4566
+  S3_ACCESS_KEY_ID: test
+  S3_SECRET_ACCESS_KEY: test
+  SACI_BIN: /usr/local/bin/saci
+
+services:
+  pg:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: braxy
+      POSTGRES_PASSWORD: braxy
+      POSTGRES_DB: braxy_development
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/pg-init.sql:/docker-entrypoint-initdb.d/10-braxy.sql:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U braxy -d braxy_development"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # S3-compatible object storage (LocalStack). The bucket is created by the
+  # ready hook in infra/s3-ready.sh. The app only speaks the S3 API, so real
+  # S3/MinIO is an env change (S3_ENDPOINT) away.
+  s3:
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: s3
+      PERSISTENCE: "1"
+    volumes:
+      - s3data:/var/lib/localstack
+      - ./infra/s3-ready.sh:/etc/localstack/init/ready.d/s3-ready.sh:ro
+    ports: ["4566:4566"]
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3api head-bucket --bucket braxy"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/backend.Dockerfile
+    working_dir: /work/braxy/backend
+    environment: *backend-env
+    # Migrate + seed (idempotent) then serve with hot reload.
+    command: ["sh", "-c", "shards install && saci db:migrate && saci db:seed && saci serve --watch --host 0.0.0.0 --port 3000"]
+    volumes:
+      - ./backend:/work/braxy/backend
+      - ../saci:/work/saci
+      - saci_lib:/work/saci/lib
+      # Container-owned shard + compiler caches (keeps host lib/ untouched).
+      - backend_lib:/work/braxy/backend/lib
+      - backend_tmp:/work/braxy/backend/tmp
+      - crystal_cache:/root/.cache
+    ports: ["3000:3000"]
+    depends_on:
+      pg: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      s3: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/up || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+      start_period: 30s
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["sh", "-c", "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5173"]
+    environment:
+      VITE_PROXY_TARGET: http://backend:3000
+      BRAXY_GIT_SHA: ${BRAXY_GIT_SHA:-dev}
+    volumes:
+      - ./frontend:/app
+      - frontend_modules:/app/node_modules
+    ports: ["5173:5173"]
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  redisdata:
+  s3data:
+  backend_lib:
+  saci_lib:
+  backend_tmp:
+  crystal_cache:
+  frontend_modules:
