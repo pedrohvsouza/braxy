@@ -124,6 +124,30 @@ describe "messages API" do
     end
   end
 
+  it "rate limits posts per user, not per IP" do
+    with_app do |app|
+      bob = Fixtures.user("bob")
+      ana = Fixtures.user("ana")
+      lobby = lobby_with(bob, ana)
+      bb = Fixtures.browser(app, bob)
+      ab = Fixtures.browser(app, ana)
+      with_rate_limits do
+        burst, period = Api::MessagesController::POST_BURST
+        # Fixed windows: start early in one so the burst does not straddle two.
+        secs = period.total_seconds.to_i
+        while Time.utc.to_unix % secs >= secs - 3
+          sleep 100.milliseconds
+        end
+        burst.times { |i| bb.post("/api/conversations/#{lobby.cid}/messages", {body: "m#{i}"}).status_code.should eq(201) }
+        res = bb.post("/api/conversations/#{lobby.cid}/messages", {body: "demais"})
+        res.status_code.should eq(429)
+        res.headers["Retry-After"].to_i.should be > 0
+        JSON.parse(res.body)["error"].as_s.should contain("Muitas mensagens")
+        ab.post("/api/conversations/#{lobby.cid}/messages", {body: "oi"}).status_code.should eq(201)
+      end
+    end
+  end
+
   it "attaches images by key" do
     with_app do |app|
       bob = Fixtures.user("bob")

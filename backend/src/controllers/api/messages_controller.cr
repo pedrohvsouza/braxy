@@ -6,8 +6,22 @@ module Api
   # POST   /api/messages/:id/reactions {emoji}   (toggle)
   class MessagesController < ::ApplicationController
     before_action :require_login
-    rate_limit to: 30, within: 10.seconds, only: [:create], name: :burst
-    rate_limit to: 60, within: 10.seconds, only: [:react], name: :reactions
+    before_action :limit_posts, only: [:create]
+    before_action :limit_reactions, only: [:react]
+
+    POST_BURST     = {30, 10.seconds}
+    POST_SUSTAINED = {120, 1.minute}
+    REACTIONS      = {60, 10.seconds}
+
+    private def limit_posts : Nil
+      error = "Muitas mensagens em pouco tempo. Espere um pouco e tente de novo."
+      limit_per_user("burst", *POST_BURST, error)
+      limit_per_user("sustained", *POST_SUSTAINED, error)
+    end
+
+    private def limit_reactions : Nil
+      limit_per_user("reactions", *REACTIONS, "Muitas reações em pouco tempo. Espere um pouco.")
+    end
 
     def index
       convo = member_conversation

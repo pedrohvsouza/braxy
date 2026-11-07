@@ -45,6 +45,19 @@ class ApplicationController < Saci::Controller
     render json: {error: "token CSRF inválido"}, status: :forbidden
   end
 
+  # Rate limit keyed by the signed-in user. The default `rate_limit` keys on
+  # the client IP, which many users share behind NAT. Declare it after
+  # `require_login`.
+  private def limit_per_user(name : String, limit : Int32, period : Time::Span, error : String) : Nil
+    return if performed?
+    user = current_user
+    return if user.nil?
+    retry_after = Saci::Controller.check_rate_limit(self.class.name, action_name, name, limit, period, "user:#{user.uid}")
+    return if retry_after.nil?
+    response.headers["Retry-After"] = retry_after.to_s
+    render json: {error: error, retry_after: retry_after}, status: :too_many_requests
+  end
+
   # -- params helpers ---------------------------------------------------
 
   private def str_param(key : String) : String?
