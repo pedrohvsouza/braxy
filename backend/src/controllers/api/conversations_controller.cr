@@ -46,7 +46,7 @@ module Api
       ids.each { |uid| Membership.ensure!(convo.cid, uid) }
       announce_added(convo, ids)
       Realtime.to_user(me.uid, {type: "conversation.added", conversation_id: convo.cid})
-      Stats.touch!
+      Stats.bump("groups")
       render json: {conversation: convo.detail_json(me)}, status: :created
     end
 

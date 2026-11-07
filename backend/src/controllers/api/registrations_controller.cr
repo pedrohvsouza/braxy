@@ -15,7 +15,7 @@ module Api
         Membership.ensure!(Conversation.lobby.cid, user.uid)
         login(user)
         Xp.daily_login(user)
-        Stats.touch!
+        Stats.bump("users")
         user = User.find_by(id: user.uid) || user
         render json: {user: user.me_json, csrf_token: form_authenticity_token}, status: :created
       else
