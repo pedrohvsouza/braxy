@@ -89,6 +89,9 @@ export const api = {
   signup: (data: { name: string; username: string; email: string; password: string }) =>
     post<{ user: Me }>("/api/signup", data),
   logout: () => del<{ ok: boolean }>("/api/session"),
+  requestPasswordReset: (email: string) => post<{ ok: boolean }>("/api/password_resets", { email }),
+  verifyResetToken: (token: string) => post<{ valid: boolean }>("/api/password_resets/verify", { token }),
+  resetPassword: (token: string, password: string) => patch<{ user: Me }>("/api/password_resets", { token, password }),
 
   updateProfile: (data: { name?: string; bio?: string; birthday?: string }) => patch<{ user: Me }>("/api/me", data),
   changePassword: (current_password: string, password: string) =>
