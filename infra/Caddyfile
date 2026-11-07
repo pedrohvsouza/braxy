@@ -38,12 +38,22 @@
 		header @assets Cache-Control "public, max-age=31536000, immutable"
 		@document not path /assets/*
 		header @document Cache-Control "no-cache"
+		# The SPA document carries its CSP as a <meta> tag (frontend/csp.ts,
+		# B6), but <meta> cannot express frame-ancestors: the anti-framing
+		# and other document headers come from whoever serves index.html.
+		header {
+			X-Frame-Options "DENY"
+			X-Content-Type-Options "nosniff"
+			Referrer-Policy "strict-origin-when-cross-origin"
+			Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		}
 		try_files {path} /index.html
 		file_server
 	}
 
-	# CSP, X-Frame-Options and Referrer-Policy belong to the app (B6), not
-	# to the proxy. HSTS is set here because only the edge knows it is TLS.
+	# API responses get their security headers from the app (B6); only the
+	# static files above get them here. HSTS is set for everything because
+	# only the edge knows it is TLS.
 	header {
 		defer
 		-Server
