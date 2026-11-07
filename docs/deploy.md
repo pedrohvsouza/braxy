@@ -21,8 +21,9 @@ As imagens saem de `infra/prod.Dockerfile` (alvos `backend` e `web`).
    ```
    Preencha `BRAXY_DOMAIN`, `ACME_EMAIL`, `SECRET_KEY_BASE` (`saci secret` ou
    `openssl rand -hex 64`), `POSTGRES_PASSWORD` e as variáveis `S3_*` do bucket
-   de uploads. Sem `S3_BUCKET`, os uploads vão para `/app/storage` do container,
-   que não tem volume e se perde no próximo deploy.
+   de uploads. Sem `S3_BUCKET`, os uploads ficam no volume `uploads`
+   (`/app/storage`): sobrevivem aos deploys, mas ficam só neste servidor e
+   fora dos backups do Postgres.
 3. Subir:
    ```sh
    docker compose -f infra/docker-compose.prod.yml --env-file .env.prod up -d --build --wait
