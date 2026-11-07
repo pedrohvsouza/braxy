@@ -1,7 +1,7 @@
 // REST client. Same-origin (Vite proxy in dev), so the HttpOnly session
 // cookie is automatic; every mutation echoes the `saci_csrf` cookie.
 import type {
-  ChatMessage, ConversationDetail, FriendRequest, FriendshipState, Me, MembersPage, MessagesPage,
+  ChatMessage, ConversationDetail, FriendRequest, FriendshipState, Me, MembersPage, MessagesPage, Sanction, SanctionKind, UserSummary,
   NotificationsData, Profile, SearchResult, SidebarData, Stats,
 } from "./types";
 
@@ -100,6 +100,15 @@ export const api = {
 
   searchUsers: (q: string) => get<{ users: SearchResult[] }>(`/api/users?q=${encodeURIComponent(q)}`),
   profile: (username: string) => get<{ user: Profile }>(`/api/users/${encodeURIComponent(username)}`),
+
+  blocks: () => get<{ users: UserSummary[] }>("/api/blocks"),
+  block: (user_id: number) => post<{ ok: boolean }>("/api/blocks", { user_id }),
+  unblock: (user_id: number) => del<{ ok: boolean }>(`/api/blocks/${user_id}`),
+  sanctions: (id: number) => get<{ sanctions: Sanction[] }>(`/api/conversations/${id}/sanctions`),
+  sanction: (id: number, user_id: number, kind: SanctionKind, minutes?: number) =>
+    post<{ ok: boolean }>(`/api/conversations/${id}/sanctions`, { user_id, kind, minutes }),
+  liftSanction: (id: number, user_id: number, kind: SanctionKind) =>
+    del<{ ok: boolean }>(`/api/conversations/${id}/sanctions/${user_id}?kind=${kind}`),
 
   friendships: () => get<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>("/api/friendships"),
   requestFriend: (user_id: number) => post<{ friendship: FriendshipState }>("/api/friendships", { user_id }),

@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
@@ -12,7 +12,14 @@ import { Avatar } from "../common/Avatar";
 import { Modal } from "../common/Modal";
 import styles from "./Profile.module.css";
 
-type Tab = "profile" | "password" | "prefs";
+type Tab = "profile" | "password" | "prefs" | "blocked";
+
+const TAB_LABELS = {
+  profile: "settings.profileTab",
+  password: "settings.passwordTab",
+  prefs: "settings.prefsTab",
+  blocked: "settings.blockedTab",
+} as const;
 
 export function SettingsModal() {
   const close = useUi((s) => s.closeModal);
@@ -20,15 +27,16 @@ export function SettingsModal() {
   return (
     <Modal title={t("settings.title")} onClose={close} width={480}>
       <div className={styles.tabs} role="tablist">
-        {(["profile", "password", "prefs"] as Tab[]).map((k) => (
+        {(Object.keys(TAB_LABELS) as Tab[]).map((k) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? styles.tabOn : ""} onClick={() => setTab(k)}>
-            {t(k === "profile" ? "settings.profileTab" : k === "password" ? "settings.passwordTab" : "settings.prefsTab")}
+            {t(TAB_LABELS[k])}
           </button>
         ))}
       </div>
       {tab === "profile" && <ProfileForm />}
       {tab === "password" && <PasswordForm />}
       {tab === "prefs" && <Prefs />}
+      {tab === "blocked" && <Blocked />}
     </Modal>
   );
 }
@@ -180,6 +188,36 @@ function Prefs() {
       {permission === "denied" && <p className={styles.hint}>{t("settings.notifyDenied")}</p>}
       {permission === "unsupported" && <p className={styles.hint}>{t("settings.notifyUnsupported")}</p>}
     </div>
+  );
+}
+
+function Blocked() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: keys.blocks, queryFn: api.blocks });
+  if (!data) return <p className="muted">{t("common.loading")}</p>;
+  if (!data.users.length) return <p className="muted">{t("settings.noBlocked")}</p>;
+  return (
+    <ul className={styles.blockedList} data-testid="blocked-list">
+      {data.users.map((u) => (
+        <li key={u.id}>
+          <Avatar name={u.name} url={u.avatar_url} size={32} />
+          <span>
+            {u.name} <span className="muted">@{u.username}</span>
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={async () => {
+              await api.unblock(u.id);
+              void qc.invalidateQueries({ queryKey: keys.blocks });
+              void qc.invalidateQueries({ queryKey: ["profile"] });
+            }}
+          >
+            {t("profile.unblock")}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

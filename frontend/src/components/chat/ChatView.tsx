@@ -5,7 +5,7 @@ import { activeConversation } from "../../hooks/useRealtime";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
 import {
-  clearUnread, flattenMessages, patchMessage, removeMessage, trimMessages, upsertMessage, useConversation, useMe,
+  clearUnread, flattenMessages, patchMessage, removeMessage, trimMessages, upsertMessage, useBlockedIds, useConversation, useMe,
   useMessages, useSidebar,
 } from "../../lib/queries";
 import { queueRead } from "../../lib/readQueue";
@@ -51,6 +51,20 @@ function Conversation({ id }: { id: number }) {
   const uploads = useRef(new Map<string, { file: File; preview: string; key?: string }>());
   const [dragging, setDragging] = useState(false);
   const announcement = useAnnouncer(messages, me.id);
+  const blockedIds = useBlockedIds();
+  const openModal = useUi((s) => s.openModal);
+  const onModerate = useCallback(
+    (m: ChatMessage) => m.author && openModal({ kind: "moderate", conversationId: id, user: m.author }),
+    [id, openModal],
+  );
+  // A timed mute lifts itself: refetch the detail when it ends.
+  const mutedUntil = convo?.muted_until ?? null;
+  useEffect(() => {
+    if (!mutedUntil || mutedUntil === "forever") return;
+    const ms = new Date(mutedUntil).getTime() - Date.now();
+    const timer = window.setTimeout(() => void qc.invalidateQueries({ queryKey: ["conversation", id] }), Math.max(ms, 0) + 500);
+    return () => window.clearTimeout(timer);
+  }, [mutedUntil, id, qc]);
   const dragDepth = useRef(0);
 
   // Active conversation bookkeeping (used by the realtime handler).
@@ -253,7 +267,14 @@ function Conversation({ id }: { id: number }) {
   const other = convo.kind === "dm" ? convo.members.find((m) => m.user.id !== me.id) : undefined;
   const friend = other ? sidebar?.friends.find((f) => f.user.id === other.user.id) : undefined;
   const otherOnline = friend?.online ?? other?.online ?? false;
-  const disabled = convo.kind === "dm" && sidebar && !friend ? t("chat.notFriends") : null;
+  const disabled =
+    convo.kind === "dm" && sidebar && !friend
+      ? t("chat.notFriends")
+      : convo.muted_until === "forever"
+        ? t("mod.youAreMutedForever")
+        : convo.muted_until && new Date(convo.muted_until).getTime() > Date.now()
+          ? t("mod.youAreMuted", { time: new Date(convo.muted_until).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) })
+          : null;
 
   // DM "Visto": my newest message the other side has read.
   let seenId = 0;
@@ -317,6 +338,8 @@ function Conversation({ id }: { id: number }) {
             message={m}
             me={me}
             canModerate={convo.can_moderate}
+            blocked={Boolean(m.author && blockedIds.has(m.author.id))}
+            onModerate={onModerate}
             seen={m.id === seenId}
             onReply={(msg) => {
               setEditing(null);

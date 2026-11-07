@@ -35,6 +35,17 @@ export interface Profile extends UserSummary {
   joined_at: string;
   friendship: FriendshipState | null;
   achievements: { key: string; unlocked_at: string | null }[];
+  /** I blocked this user. */
+  blocked: boolean;
+}
+
+export type SanctionKind = "mute" | "ban";
+
+export interface Sanction {
+  user: UserSummary;
+  kind: SanctionKind;
+  expires_at: string | null;
+  moderator: UserSummary | null;
 }
 
 export interface Preview {
@@ -88,6 +99,8 @@ export interface ConversationDetail {
   owner_id: number | null;
   can_manage: boolean;
   can_moderate: boolean;
+  /** My own mute here: an ISO time, "forever", or null. */
+  muted_until: string | null;
   member_count: number;
   members: Member[];
 }

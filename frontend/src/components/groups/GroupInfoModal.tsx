@@ -11,6 +11,7 @@ import { useUi } from "../../store/ui";
 import { Avatar } from "../common/Avatar";
 import { Modal } from "../common/Modal";
 import { UserName } from "../common/UserName";
+import { SanctionList } from "../moderation/SanctionList";
 import { FriendPicker } from "./FriendPicker";
 import styles from "./Groups.module.css";
 
@@ -130,6 +131,7 @@ export function GroupInfoModal({ conversationId }: { conversationId: number }) {
           </ul>
         )}
         <MemberList convo={convo} onRemove={(userId) => void guard(() => api.removeMember(conversationId, userId))} />
+        {convo.can_moderate && <SanctionList conversationId={convo.id} />}
         {convo.kind === "group" && !convo.can_manage && (
           <button
             type="button"

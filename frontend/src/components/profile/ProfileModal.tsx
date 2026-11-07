@@ -50,6 +50,23 @@ export function ProfileModal({ username }: { username: string }) {
             )}
           </ul>
           <Achievements unlocked={user.achievements ?? []} />
+          {user.friendship?.status !== "self" && (
+            <button
+              type="button"
+              className={`btn btn-sm btn-ghost ${styles.blockBtn}`}
+              data-testid="block-toggle"
+              onClick={async () => {
+                if (!user.blocked && !window.confirm(t("profile.blockConfirm", { name: user.name }))) return;
+                await (user.blocked ? api.unblock(user.id) : api.block(user.id));
+                for (const key of [keys.profile(username), keys.blocks, keys.sidebar, keys.friendships]) {
+                  void qc.invalidateQueries({ queryKey: key });
+                }
+                void qc.invalidateQueries({ queryKey: ["search"] });
+              }}
+            >
+              {user.blocked ? t("profile.unblock") : t("profile.block")}
+            </button>
+          )}
           {user.friendship && user.friendship.status !== "self" && (
             <div className={styles.buttons}>
               <FriendAction result={{ user, friendship: user.friendship }} onDone={close} />

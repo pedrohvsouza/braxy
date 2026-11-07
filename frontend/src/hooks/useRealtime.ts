@@ -126,6 +126,7 @@ export function useRealtime(me: Me): void {
         }
       },
       "friendship.changed": () => {
+        void qc.invalidateQueries({ queryKey: keys.blocks });
         void qc.invalidateQueries({ queryKey: keys.sidebar });
         void qc.invalidateQueries({ queryKey: keys.friendships });
         void qc.invalidateQueries({ queryKey: ["search"] });

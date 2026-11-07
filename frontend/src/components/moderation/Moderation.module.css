@@ -1,0 +1,67 @@
+.box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.box h3,
+.sanctions h3 {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+
+.box p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.box > :global(.btn-danger) {
+  align-self: flex-start;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.who > div {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+}
+
+.durations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sanctions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sanctions p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.sanction {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+}
+
+.sanctionText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}

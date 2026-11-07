@@ -187,3 +187,32 @@
   filter: grayscale(1);
   opacity: 0.35;
 }
+
+.blockBtn {
+  order: 99;
+  align-self: center;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.blockedList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.blockedList li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+}
+
+.blockedList li > span {
+  flex: 1;
+  min-width: 0;
+}

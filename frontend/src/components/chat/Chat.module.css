@@ -670,3 +670,13 @@
     right: 0;
   }
 }
+
+.showAnyway {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--link);
+  font: inherit;
+  font-style: normal;
+  cursor: pointer;
+}

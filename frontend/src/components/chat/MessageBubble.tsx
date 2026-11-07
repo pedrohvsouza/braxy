@@ -1,4 +1,4 @@
-import { faAt, faFaceSmile, faPen, faReply, faTrash } from "@fortawesome/free-solid-svg-icons";
+import { faAt, faFaceSmile, faGavel, faPen, faReply, faTrash } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { memo, useEffect, useRef, useState } from "react";
 import { t } from "../../i18n";
@@ -29,6 +29,9 @@ interface Props {
   me: Me;
   canModerate: boolean;
   seen: boolean;
+  /** The author is someone I blocked: the body starts collapsed. */
+  blocked?: boolean;
+  onModerate?: (m: ChatMessage) => void;
   onReply: (m: ChatMessage) => void;
   onMention: (username: string) => void;
   onEdit: (m: ChatMessage) => void;
@@ -42,6 +45,8 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
   const { message: m, me, canModerate, seen } = props;
   const openModal = useUi((s) => s.openModal);
   const [picker, setPicker] = useState(false);
+  const [reveal, setReveal] = useState(false);
+  const hidden = Boolean(props.blocked) && !reveal && !m.deleted;
   const pickerRef = useRef<HTMLDivElement>(null);
   const reactBtn = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -72,7 +77,7 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
             )}
           </div>
 
-          {m.reply_to && !m.deleted && (
+          {m.reply_to && !m.deleted && !hidden && (
             <button type="button" className={styles.quote} onClick={() => props.onJump(m.reply_to!.id)}>
               <span className={`role-name role-${m.reply_to.author_role}`}>{m.reply_to.author_name}</span>
               <span>{plainText(m.reply_to.preview)}</span>
@@ -81,6 +86,13 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
 
           {m.deleted ? (
             <p className={`${styles.body} ${styles.deleted}`}>{t("chat.deleted")}</p>
+          ) : hidden ? (
+            <p className={`${styles.body} ${styles.deleted}`}>
+              {t("chat.blockedMessage")}{" "}
+              <button type="button" className={styles.showAnyway} onClick={() => setReveal(true)}>
+                {t("chat.showAnyway")}
+              </button>
+            </p>
           ) : (
             <>
               {m.body && (
@@ -143,6 +155,11 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
           {mine && m.body && (
             <button type="button" title={t("chat.edit")} aria-label={t("chat.edit")} onClick={() => props.onEdit(m)}>
               <FontAwesomeIcon icon={faPen} />
+            </button>
+          )}
+          {canModerate && author && !mine && props.onModerate && (
+            <button type="button" title={t("mod.action")} aria-label={t("mod.action")} onClick={() => props.onModerate!(m)}>
+              <FontAwesomeIcon icon={faGavel} />
             </button>
           )}
           {(mine || canModerate) && (

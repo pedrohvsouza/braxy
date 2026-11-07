@@ -2,6 +2,7 @@ import { useUi } from "../store/ui";
 import { RequestsModal } from "./friends/RequestsModal";
 import { CreateGroupModal } from "./groups/CreateGroupModal";
 import { GroupInfoModal } from "./groups/GroupInfoModal";
+import { ModerateModal } from "./moderation/ModerateModal";
 import { ProfileModal } from "./profile/ProfileModal";
 import { SettingsModal } from "./profile/SettingsModal";
 
@@ -18,6 +19,8 @@ export function Modals() {
       return <GroupInfoModal conversationId={modal.conversationId} />;
     case "requests":
       return <RequestsModal />;
+    case "moderate":
+      return <ModerateModal conversationId={modal.conversationId} user={modal.user} />;
     default:
       return null;
   }

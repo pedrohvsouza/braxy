@@ -1,4 +1,5 @@
 import { type InfiniteData, QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { api, isUnavailable } from "./api";
 import type { ChatMessage, Me, MembersPage, MessagesPage, NotificationsData, SidebarData, Stats } from "./types";
 
@@ -10,6 +11,8 @@ export const keys = {
   members: (id: number, q = "") => ["members", id, q] as const,
   notifications: ["notifications"] as const,
   friendships: ["friendships"] as const,
+  blocks: ["blocks"] as const,
+  sanctions: (id: number) => ["sanctions", id] as const,
   stats: ["stats"] as const,
   profile: (username: string) => ["profile", username] as const,
   search: (q: string) => ["search", q] as const,
@@ -75,6 +78,16 @@ export function useNotifications() {
 
 export function useStats() {
   return useQuery({ queryKey: keys.stats, queryFn: () => api.stats().then((r) => r.stats) });
+}
+
+/** Ids of the users I blocked (their messages show collapsed). */
+export function useBlockedIds(): Set<number> {
+  const { data } = useQuery({ queryKey: keys.blocks, queryFn: api.blocks, staleTime: 60_000 });
+  return useMemo(() => new Set((data?.users ?? []).map((u) => u.id)), [data]);
+}
+
+export function useSanctions(id: number, enabled: boolean) {
+  return useQuery({ queryKey: keys.sanctions(id), queryFn: () => api.sanctions(id).then((r) => r.sanctions), enabled });
 }
 
 export function useFriendships() {
