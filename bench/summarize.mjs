@@ -48,6 +48,7 @@ const CONFIGS = [
   ["st1opt", "Depois · 1 processo", 0],
   ["st4opt", "Depois · 4 processos", 0],
   ["gc10b", "Saci otimizado · 1 processo", 0],
+  ["ws29p4", "Pool de frames + buffers enxutos · 4 processos", 0],
 ];
 
 // wrk sweeps (2,000 rotating users) — a different, heavier methodology than
@@ -56,6 +57,9 @@ const WRK = [
   ["w4p8", "Saci otimizado · 4 processos (wrk)"],
   ["w11", "Cache + escrita em lote · 4 processos (wrk)"],
   ["full17", "Lotes maiores + broadcast enxuto · 4 processos (wrk)"],
+  ["full20p4", "Canal Redis por stream + sidebar em cache · 4 processos (wrk)"],
+  ["full25p4", "GC adaptativo + lote em 1 statement · 4 processos (wrk)"],
+  ["full30p4", "Pool de frames + single-flight de mensagens · 4 processos (wrk)"],
 ];
 
 const http = [];
