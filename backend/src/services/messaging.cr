@@ -31,7 +31,7 @@ module Messaging
 
     # Group commit: this request's insert, the conversation/read-cursor
     # updates and the XP award share one transaction with concurrent posts.
-    job = MessageWriter.write(message, Xp.claim_message_xp(author, convo))
+    job = MessageWriter.write(message, Xp.claim_message_xp(author, convo), author.name || "?")
     unless job.created
       # Retry of an already stored message: return the original.
       return {Message.find_by(id: message.id) || message, false}
@@ -62,6 +62,7 @@ module Messaging
     raise Invalid.new(["mensagem vazia"]) if text.nil? && message.image_key.nil?
     raise Invalid.new(["mensagem muito longa"]) if text && text.size > Message::MAX_BODY
     message.update_columns(body: text, edited_at: Time.utc)
+    ConversationPreview.store(message, user.name || "?") # no-op unless it is the newest
     MessagePageCache.bump(message.conversation_id.not_nil!)
     Realtime.to_conversation(message.conversation_id.not_nil!, {type: "message.updated", message: message.wire_json})
     message
@@ -73,6 +74,8 @@ module Messaging
     unless message.deleted?
       message.update_columns(deleted_at: Time.utc)
       Reaction.where(message_id: message.mid).delete_all
+      author = message.author_id.try { |a| UserCache.fetch(a) }
+      ConversationPreview.store(message, author.try(&.name) || "?") # no-op unless newest
       MessagePageCache.bump(convo.cid)
       Realtime.to_conversation(convo.cid, {type: "message.updated", message: message.wire_json})
       Stats.bump("messages", -1)

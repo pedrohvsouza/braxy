@@ -15,7 +15,8 @@ module Api
     MAX_GROUP_MEMBERS = 200
 
     def sidebar
-      render json: Sidebar.build(me)
+      json = SidebarCache.fetch(me.uid) { Sidebar.build(me).to_json }
+      render body: json, content_type: "application/json"
     end
 
     def show
@@ -146,6 +147,7 @@ module Api
       upto = {upto, convo.last_message_id || 0_i64}.min
       if upto > membership.last_read_message_id.not_nil!
         membership.update_columns(last_read_message_id: upto)
+        Invalidation.sidebar(me.uid) # unread badges changed
         # DMs show "Visto" to the other side.
         if convo.dm?
           Realtime.to_conversation(convo.cid, {type: "read", conversation_id: convo.cid, user_id: me.uid, message_id: upto})

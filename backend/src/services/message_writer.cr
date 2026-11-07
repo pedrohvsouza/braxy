@@ -26,11 +26,12 @@ module MessageWriter
   class Job
     getter message : Message
     getter xp : Int32
+    getter author_name : String
     getter done = ::Channel(Exception?).new(1)
     property created = true
     property xp_paid = false
 
-    def initialize(@message : Message, @xp : Int32)
+    def initialize(@message : Message, @xp : Int32, @author_name : String = "?")
     end
   end
 
@@ -40,9 +41,9 @@ module MessageWriter
   # Writes `message` (validated, with client_id set) and fills in its id and
   # timestamps. Returns false when a message with the same (author, client_id)
   # already existed (`message` then holds that row's id).
-  def self.write(message : Message, xp : Int32 = 0) : Job
+  def self.write(message : Message, xp : Int32 = 0, author_name : String = "?") : Job
     start
-    job = Job.new(message, xp)
+    job = Job.new(message, xp, author_name)
     @@queue.send(job)
     if failure = job.done.receive
       raise failure
@@ -75,8 +76,17 @@ module MessageWriter
         failure = nil.as(Exception?)
         begin
           write_batch(batch)
-          # One cache-version bump per conversation per batch.
-          batch.compact_map { |job| job.created ? job.message.conversation_id : nil }.uniq.each do |cid|
+          # Per conversation in this batch: refresh the sidebar preview with
+          # its newest message, then bump the cache version (in that order,
+          # so a reader that sees the new version also sees the preview).
+          newest = {} of Int64 => Job
+          batch.each do |job|
+            next unless job.created
+            cid = job.message.conversation_id.not_nil!
+            newest[cid] = job if (prev = newest[cid]?).nil? || prev.message.mid < job.message.mid
+          end
+          newest.each do |cid, job|
+            ConversationPreview.store(job.message, job.author_name)
             MessagePageCache.bump(cid)
           end
         rescue ex

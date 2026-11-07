@@ -9,6 +9,10 @@ module KV
   abstract class Backend
     abstract def incr(key : String, by : Int64 = 1) : Int64
     abstract def get(key : String) : String?
+    abstract def mget(keys : Array(String)) : Array(String?)
+    # Sets keys[1] = value and keys[0] = json when id >= the id stored in
+    # keys[1] (or none is stored): a monotonic "latest" register.
+    abstract def set_if_newer(id_key : String, value_key : String, id : Int64, value : String) : Nil
     abstract def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
     abstract def del(key : String) : Nil
     abstract def getdel(key : String) : String?
@@ -45,6 +49,19 @@ module KV
 
     def get(key : String) : String?
       call(["GET", key]).as?(String)
+    end
+
+    def mget(keys : Array(String)) : Array(String?)
+      return [] of String? if keys.empty?
+      call(["MGET"] + keys).as(Array).map(&.as?(String))
+    end
+
+    SET_IF_NEWER = "local cur = redis.call('GET', KEYS[1]) " \
+                   "if (not cur) or tonumber(cur) <= tonumber(ARGV[1]) then " \
+                   "redis.call('SET', KEYS[1], ARGV[1]) redis.call('SET', KEYS[2], ARGV[2]) end return 0"
+
+    def set_if_newer(id_key : String, value_key : String, id : Int64, value : String) : Nil
+      call(["EVAL", SET_IF_NEWER, "2", id_key, value_key, id.to_s, value])
     end
 
     def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
@@ -110,6 +127,20 @@ module KV
 
     def get(key : String) : String?
       @mutex.synchronize { live(key) }
+    end
+
+    def mget(keys : Array(String)) : Array(String?)
+      @mutex.synchronize { keys.map { |k| live(k) } }
+    end
+
+    def set_if_newer(id_key : String, value_key : String, id : Int64, value : String) : Nil
+      @mutex.synchronize do
+        cur = live(id_key).try(&.to_i64?)
+        if cur.nil? || cur <= id
+          @strings[id_key] = {id.to_s, nil}
+          @strings[value_key] = {value, nil}
+        end
+      end
     end
 
     def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool

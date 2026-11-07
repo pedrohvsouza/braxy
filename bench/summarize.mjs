@@ -55,6 +55,7 @@ const CONFIGS = [
 const WRK = [
   ["w4p8", "Saci otimizado · 4 processos (wrk)"],
   ["w11", "Cache + escrita em lote · 4 processos (wrk)"],
+  ["full17", "Lotes maiores + broadcast enxuto · 4 processos (wrk)"],
 ];
 
 const http = [];

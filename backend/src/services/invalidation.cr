@@ -48,15 +48,29 @@ module Invalidation
     parts = key.split(":")
     case parts[0]?
     when "user"    then UserCache.invalidate(parts[1]?.try(&.to_i64?))
-    when "conv"    then parts[1]?.try(&.to_i64?).try { |id| Access.invalidate_conversation(id) }
-    when "member"  then (c = parts[1]?.try(&.to_i64?)) && (u = parts[2]?.try(&.to_i64?)) && Access.invalidate_member(c, u)
-    when "friends" then (a = parts[1]?.try(&.to_i64?)) && (b = parts[2]?.try(&.to_i64?)) && Access.invalidate_friends(a, b)
+    when "conv"
+      parts[1]?.try(&.to_i64?).try { |id| Access.invalidate_conversation(id) }
+      SidebarCache.clear! # names/avatars show in many sidebars; renames are rare
+    when "member"
+      if (c = parts[1]?.try(&.to_i64?)) && (u = parts[2]?.try(&.to_i64?))
+        Access.invalidate_member(c, u)
+        SidebarCache.invalidate(u)
+      end
+    when "friends"
+      if (a = parts[1]?.try(&.to_i64?)) && (b = parts[2]?.try(&.to_i64?))
+        Access.invalidate_friends(a, b)
+        SidebarCache.invalidate(a)
+        SidebarCache.invalidate(b)
+      end
+    when "sidebar"
+      parts[1]?.try(&.to_i64?).try { |id| SidebarCache.invalidate(id) }
     end
   end
 
   private def self.clear_all : Nil
     UserCache.clear!
     Access.clear!
+    SidebarCache.clear!
   end
 
   def self.user(id : Int64?) : Nil
@@ -69,6 +83,10 @@ module Invalidation
 
   def self.member(conversation_id : Int64, user_id : Int64) : Nil
     publish("member:#{conversation_id}:#{user_id}")
+  end
+
+  def self.sidebar(user_id : Int64) : Nil
+    publish("sidebar:#{user_id}")
   end
 
   def self.friends(a : Int64, b : Int64) : Nil

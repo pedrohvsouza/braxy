@@ -27,6 +27,7 @@ services:
       # Boehm GC: higher = less free heap kept in reserve (more GC work).
       GC_FREE_SPACE_DIVISOR: ${GC_FREE_SPACE_DIVISOR:-10}
       BENCH_DEBUG: "1"
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       CRYSTAL_WORKERS: "4"
       # Per process. Keep processes x pool near the core count (bin/multi: DB_POOL=8).
       DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_development?initial_pool_size=${DB_POOL:-32}&max_idle_pool_size=${DB_POOL:-32}&max_pool_size=${DB_POOL:-32}&retry_delay=0.001
@@ -40,7 +41,7 @@ services:
     ulimits:
       nofile: { soft: 200000, hard: 200000 }
     # Lets gdb attach inside the container to diagnose hangs (bench only).
-    cap_add: [SYS_PTRACE]
+    cap_add: [SYS_PTRACE, PERFMON]
     healthcheck:
       start_period: 600s
 

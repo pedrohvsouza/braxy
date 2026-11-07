@@ -12,6 +12,8 @@ module Access
   @@conversations = {} of Int64 => {Conversation, Time::Instant}
   @@members = {} of {Int64, Int64} => {Bool, Time::Instant}
   @@friends = {} of String => {Bool, Time::Instant}
+  @@user_convs = {} of Int64 => {Array(Int64), Time::Instant}
+  @@friend_ids = {} of Int64 => {Array(Int64), Time::Instant}
 
   private def self.cached(table : Hash(K, {V, Time::Instant}), key : K, &) : V forall K, V
     now = Time.instant
@@ -49,16 +51,34 @@ module Access
     cached(@@friends, Friendship.pair_key(a, b)) { Friendship.friends?(a, b) }
   end
 
+  # Ids of the conversations `user_id` belongs to (invalidated by any
+  # membership change of that user).
+  def self.conversation_ids(user_id : Int64) : Array(Int64)
+    cached(@@user_convs, user_id) { Membership.conversation_ids_for(user_id).sort }
+  end
+
+  # Accepted friends of `user_id` (invalidated by any friendship change).
+  def self.friend_ids(user_id : Int64) : Array(Int64)
+    cached(@@friend_ids, user_id) { Friendship.friend_ids(user_id).sort }
+  end
+
   def self.invalidate_conversation(id : Int64) : Nil
     @@mutex.synchronize { @@conversations.delete(id) }
   end
 
   def self.invalidate_member(conversation_id : Int64, user_id : Int64) : Nil
-    @@mutex.synchronize { @@members.delete({conversation_id, user_id}) }
+    @@mutex.synchronize do
+      @@members.delete({conversation_id, user_id})
+      @@user_convs.delete(user_id)
+    end
   end
 
   def self.invalidate_friends(a : Int64, b : Int64) : Nil
-    @@mutex.synchronize { @@friends.delete(Friendship.pair_key(a, b)) }
+    @@mutex.synchronize do
+      @@friends.delete(Friendship.pair_key(a, b))
+      @@friend_ids.delete(a)
+      @@friend_ids.delete(b)
+    end
   end
 
   def self.clear! : Nil
@@ -66,6 +86,8 @@ module Access
       @@conversations.clear
       @@members.clear
       @@friends.clear
+      @@user_convs.clear
+      @@friend_ids.clear
     end
   end
 end
