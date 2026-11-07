@@ -1,6 +1,6 @@
 class Message < ApplicationRecord
   MAX_BODY   = 2000
-  PAGE_SIZE  = 50
+  PAGE_SIZE  =   50
   MENTION_RE = /(?<![a-z0-9_])@([a-z0-9_]{3,20})/i
 
   alias ReactionSummary = NamedTuple(emoji: String, count: Int32, user_ids: Array(Int64))

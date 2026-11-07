@@ -115,15 +115,15 @@ class Conversation < ApplicationRecord
     users = User.by_ids(members.compact_map(&.user_id))
     online = Presence.online_ids(users.keys)
     {
-      id:         id,
-      kind:       kind,
-      name:       name,
-      avatar_url: avatar_url,
-      owner_id:   owner_id,
-      can_manage: !dm? && !lobby? && owner?(viewer.uid),
+      id:           id,
+      kind:         kind,
+      name:         name,
+      avatar_url:   avatar_url,
+      owner_id:     owner_id,
+      can_manage:   !dm? && !lobby? && owner?(viewer.uid),
       can_moderate: can_moderate?(viewer),
       member_count: members.size,
-      members:    members.compact_map { |m|
+      members:      members.compact_map { |m|
         users[m.user_id]?.try { |u|
           {user: u.summary_json, role: m.role, online: online.includes?(u.uid), last_read_message_id: m.last_read_message_id}
         }

@@ -64,7 +64,7 @@ module Xp
     today = Time.utc.in(BRT).at_beginning_of_day
     guard = "braxy:daily:#{user.uid}:#{today.to_s("%Y-%m-%d")}"
     return false if @@daily_mutex.synchronize { @@daily_seen.includes?(guard) }
-    remember = ->{
+    remember = -> {
       @@daily_mutex.synchronize do
         @@daily_seen.clear if @@daily_seen.size > 500_000
         @@daily_seen << guard
