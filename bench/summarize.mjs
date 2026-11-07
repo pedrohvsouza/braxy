@@ -47,13 +47,28 @@ const CONFIGS = [
   ["st", "Antes · 1 processo", 3],
   ["st1opt", "Depois · 1 processo", 0],
   ["st4opt", "Depois · 4 processos", 0],
+  ["gc10b", "Saci otimizado · 1 processo", 0],
 ];
+
+// wrk sweeps (2,000 rotating users) — a different, heavier methodology than
+// the autocannon runs above (single user), so they are their own config.
+const WRK = [["w4p8", "Saci otimizado · 4 processos (wrk)"]];
 
 const http = [];
 for (const [slug, config] of CONFIGS) {
   const file = `results/http-sweep-${slug}.txt`;
   if (!existsSync(file)) continue;
   for (const p of json(file) ?? []) http.push({ config, ...p });
+}
+for (const [slug, config] of WRK) {
+  const file = `results/wrk-${slug}.txt`;
+  if (!existsSync(file)) continue;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    if (!line.startsWith("POINT:")) continue;
+    const p = JSON.parse(line.slice(6));
+    const names = { up: "GET /up", session: "GET /api/session", sidebar: "GET /api/sidebar", messages: "GET messages", post: "POST message" };
+    http.push({ config, endpoint: p.endpoint, name: names[p.endpoint], connections: p.connections, rps: p.rps, p50: p.p50, p90: p.p90, p99: p.p99, errors: p.errors + p.sockerr + p.timeouts, non2xx: 0 });
+  }
 }
 writeFileSync("results/http_sweep.json", JSON.stringify(http, null, 1));
 

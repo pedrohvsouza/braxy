@@ -28,7 +28,8 @@ services:
       GC_FREE_SPACE_DIVISOR: ${GC_FREE_SPACE_DIVISOR:-10}
       BENCH_DEBUG: "1"
       CRYSTAL_WORKERS: "4"
-      DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_development?initial_pool_size=8&max_idle_pool_size=32&max_pool_size=32&retry_delay=0.001
+      # Per process. Keep processes x pool near the core count (bin/multi: DB_POOL=8).
+      DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_development?initial_pool_size=${DB_POOL:-32}&max_idle_pool_size=${DB_POOL:-32}&max_pool_size=${DB_POOL:-32}&retry_delay=0.001
       APP_ORIGINS: http://localhost:5173,http://bench.local
     # Runs the prebuilt release binary (the compiler itself needs >1 GB, so
     # the build happens outside the limits — see bench/README.md):
