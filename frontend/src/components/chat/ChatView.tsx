@@ -5,7 +5,7 @@ import { activeConversation } from "../../hooks/useRealtime";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
 import {
-  clearUnread, flattenMessages, patchMessage, removeMessage, upsertMessage, useConversation, useMe,
+  clearUnread, flattenMessages, patchMessage, removeMessage, trimMessages, upsertMessage, useConversation, useMe,
   useMessages, useSidebar,
 } from "../../lib/queries";
 import type { ChatMessage } from "../../lib/types";
@@ -16,6 +16,10 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
 
 let tempSeq = 0;
+
+/** History kept in memory (and the DOM) while reading the newest messages. */
+const KEEP_MESSAGES = 150;
+const TRIM_AT = 300;
 const clientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export function ChatView() {
@@ -89,6 +93,12 @@ function Conversation({ id }: { id: number }) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
+
+  // Busy rooms keep appending over the socket: at the bottom, drop the old
+  // history so the list stays small. Scrolling up pages it back in.
+  useEffect(() => {
+    if (messages.length > TRIM_AT && stick.current && !isFetchingNextPage) trimMessages(qc, id, KEEP_MESSAGES);
+  }, [messages.length, isFetchingNextPage, qc, id]);
 
   // The list shrinks when the composer grows (preview, reply bar, long
   // drafts): stay pinned to the bottom if we were there.

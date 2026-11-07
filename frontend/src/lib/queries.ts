@@ -124,6 +124,38 @@ export function removeMessage(qc: QueryClient, conversationId: number, id: numbe
   );
 }
 
+/**
+ * Drops all but the newest `keep` messages of a conversation from the cache.
+ * The cut page is marked `has_more`, so scrolling up pages them back in.
+ * Returns whether anything was dropped.
+ */
+export function trimMessages(qc: QueryClient, conversationId: number, keep: number): boolean {
+  let trimmed = false;
+  qc.setQueryData<MessagesCache>(keys.messages(conversationId), (data) => {
+    if (!data) return data;
+    const pages: MessagesPage[] = [];
+    let count = 0;
+    for (const page of data.pages) {
+      const room = keep - count;
+      if (room <= 0) break;
+      if (page.messages.length > room) {
+        pages.push({ ...page, messages: page.messages.slice(-room), has_more: true });
+        count = keep;
+      } else {
+        pages.push(page);
+        count += page.messages.length;
+      }
+    }
+    const dropped = pages.length < data.pages.length || pages[pages.length - 1] !== data.pages[pages.length - 1];
+    if (!dropped) return data;
+    trimmed = true;
+    const last = pages.length - 1;
+    pages[last] = { ...pages[last], has_more: true };
+    return { pages, pageParams: data.pageParams.slice(0, pages.length) };
+  });
+  return trimmed;
+}
+
 export function lastMessageId(qc: QueryClient, conversationId: number): number {
   const all = flattenMessages(qc.getQueryData<MessagesCache>(keys.messages(conversationId)));
   for (let i = all.length - 1; i >= 0; i--) if (all[i].id > 0) return all[i].id;

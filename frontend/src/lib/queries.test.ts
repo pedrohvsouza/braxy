@@ -1,6 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { bumpSidebar, flattenMessages, keys, upsertMessage } from "./queries";
+import { bumpSidebar, flattenMessages, keys, trimMessages, upsertMessage } from "./queries";
 import type { ChatMessage, SidebarData } from "./types";
 
 const author = { id: 1, name: "Ana", username: "ana", role: "member" as const, level: 1, avatar_url: null };
@@ -32,6 +32,20 @@ describe("message cache", () => {
     const all = flattenMessages(qc.getQueryData(keys.messages(7)));
     expect(all.map((m) => m.id)).toEqual([1, 2]);
     expect(all[1].pending).toBe(false);
+  });
+
+  it("trims to the newest messages and lets older pages load again", () => {
+    const qc = new QueryClient();
+    seed(qc, [[msg(5), msg(6), msg(7)], [msg(3), msg(4)], [msg(1), msg(2)]]);
+    qc.setQueryData(keys.messages(7), (d: { pages: unknown[]; pageParams: unknown[] }) => ({ ...d, pageParams: [0, 5, 3] }));
+    expect(trimMessages(qc, 7, 4)).toBe(true);
+    const data = qc.getQueryData<{ pages: { messages: ChatMessage[]; has_more: boolean }[]; pageParams: unknown[] }>(keys.messages(7))!;
+    expect(flattenMessages(data as never).map((m) => m.id)).toEqual([4, 5, 6, 7]);
+    expect(data.pages.map((p) => p.has_more)).toEqual([false, true]);
+    expect(data.pageParams).toEqual([0, 5]);
+    // Nothing left to drop: the cache stays untouched.
+    expect(trimMessages(qc, 7, 4)).toBe(false);
+    expect(qc.getQueryData(keys.messages(7))).toBe(data);
   });
 
   it("keeps pending messages after confirmed ones", () => {
