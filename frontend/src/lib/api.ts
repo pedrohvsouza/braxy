@@ -1,7 +1,7 @@
 // REST client. Same-origin (Vite proxy in dev), so the HttpOnly session
 // cookie is automatic; every mutation echoes the `saci_csrf` cookie.
 import type {
-  ChatMessage, ConversationDetail, FriendRequest, FriendshipState, Me, MessagesPage,
+  ChatMessage, ConversationDetail, FriendRequest, FriendshipState, Me, MembersPage, MessagesPage,
   NotificationsData, Profile, SearchResult, SidebarData, Stats,
 } from "./types";
 
@@ -101,6 +101,13 @@ export const api = {
     post<{ conversation: ConversationDetail }>(`/api/conversations/${id}/avatar`, fileForm(file)),
   addMembers: (id: number, user_ids: number[]) =>
     post<{ conversation: ConversationDetail }>(`/api/conversations/${id}/members`, { user_ids }),
+  members: (id: number, opts: { q?: string; cursor?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.q) qs.set("q", opts.q);
+    if (opts.cursor) qs.set("cursor", String(opts.cursor));
+    const s = qs.toString();
+    return get<MembersPage>(`/api/conversations/${id}/members${s ? `?${s}` : ""}`);
+  },
   removeMember: (id: number, user_id: number) => del<{ ok: boolean }>(`/api/conversations/${id}/members/${user_id}`),
   markRead: (id: number, message_id: number) => post<{ ok: boolean }>(`/api/conversations/${id}/read`, { message_id }),
 

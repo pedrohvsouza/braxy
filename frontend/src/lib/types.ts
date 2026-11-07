@@ -74,6 +74,11 @@ export interface Member {
   last_read_message_id: number;
 }
 
+export interface MembersPage {
+  members: Member[];
+  next_cursor: number | null;
+}
+
 export interface ConversationDetail {
   id: number;
   kind: "lobby" | "group" | "dm";

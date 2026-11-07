@@ -1,12 +1,13 @@
 import { type InfiniteData, QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api } from "./api";
-import type { ChatMessage, Me, MessagesPage, NotificationsData, SidebarData, Stats } from "./types";
+import type { ChatMessage, Me, MembersPage, MessagesPage, NotificationsData, SidebarData, Stats } from "./types";
 
 export const keys = {
   session: ["session"] as const,
   sidebar: ["sidebar"] as const,
   conversation: (id: number) => ["conversation", id] as const,
   messages: (id: number) => ["messages", id] as const,
+  members: (id: number, q = "") => ["members", id, q] as const,
   notifications: ["notifications"] as const,
   friendships: ["friendships"] as const,
   stats: ["stats"] as const,
@@ -44,6 +45,17 @@ export function useMessages(id: number) {
     initialPageParam: 0,
     getNextPageParam: (last: MessagesPage) => (last.has_more && last.messages.length ? last.messages[0].id : undefined),
     staleTime: Infinity,
+  });
+}
+
+/** Member pages of a conversation, in join order, filtered by `q`. */
+export function useMembers(id: number, q: string) {
+  return useInfiniteQuery({
+    queryKey: keys.members(id, q),
+    queryFn: ({ pageParam }) => api.members(id, { q, cursor: pageParam || undefined }),
+    initialPageParam: 0,
+    getNextPageParam: (last: MembersPage) => last.next_cursor ?? undefined,
+    placeholderData: (prev) => prev,
   });
 }
 

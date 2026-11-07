@@ -132,6 +132,8 @@ export const ptBR = {
   "group.leaveConfirm": "Sair deste grupo?",
   "group.owner": "Dono",
   "group.membersTitle": "Membros",
+  "group.searchMembers": "Buscar membro…",
+  "group.noMembersFound": "Nenhum membro encontrado.",
   "group.noFriendsToAdd": "Todos os seus amigos já estão no grupo.",
 
   "profile.title": "Perfil",
