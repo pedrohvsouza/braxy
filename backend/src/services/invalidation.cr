@@ -6,7 +6,8 @@
 # keep long TTLs without serving stale authorization data (e.g. a member
 # removed from a group loses access everywhere at once).
 #
-# Messages: "user:<id>", "conv:<id>", "member:<cid>:<uid>", "friends:<a>:<b>",
+# Messages: "user:<id>", "conv:<id>", "member:<cid>:<uid>", "left:<cid>:<uid>",
+# "friends:<a>:<b>",
 # "vers:<cid>=<n>,..." (conversation versions, see MessagePageCache).
 module Invalidation
   CHANNEL = "braxy:invalidate"
@@ -61,6 +62,10 @@ module Invalidation
         Access.invalidate_member(c, u)
         SidebarCache.invalidate(u)
       end
+    when "left"
+      if (c = parts[1]?.try(&.to_i64?)) && (u = parts[2]?.try(&.to_i64?))
+        ChatChannel.stop_following(c, u)
+      end
     when "friends"
       if (a = parts[1]?.try(&.to_i64?)) && (b = parts[2]?.try(&.to_i64?))
         Access.invalidate_friends(a, b)
@@ -92,6 +97,13 @@ module Invalidation
 
   def self.member(conversation_id : Int64, user_id : Int64) : Nil
     publish("member:#{conversation_id}:#{user_id}")
+  end
+
+  # `user_id` was removed from the conversation: every process drops that
+  # conversation's stream from the user's open sockets. Publish it after the
+  # membership row is gone.
+  def self.left(conversation_id : Int64, user_id : Int64) : Nil
+    publish("left:#{conversation_id}:#{user_id}")
   end
 
   def self.sidebar(user_id : Int64) : Nil

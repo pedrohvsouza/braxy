@@ -135,6 +135,7 @@ module Api
       end
       membership.destroy
       Realtime.to_user(target, {type: "conversation.removed", conversation_id: convo.cid})
+      Invalidation.left(convo.cid, target)
       broadcast_updated(convo)
       render json: {ok: true}
     end

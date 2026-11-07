@@ -121,4 +121,26 @@ describe ChatChannel do
       end
     end
   end
+
+  it "stops streaming a conversation to a member removed from it" do
+    with_app do |app|
+      bob = Fixtures.user("bob")
+      ana = Fixtures.user("ana")
+      group = Fixtures.group(bob, "Dupla", [ana])
+      other = Fixtures.group(bob, "Outra", [ana])
+      listener = Fixtures.browser(app, ana).cable
+      listener.subscribe("ChatChannel")
+      begin
+        bb = Fixtures.browser(app, bob)
+        bb.delete("/api/conversations/#{group.cid}/members/#{ana.uid}").status_code.should eq(200)
+        wait_for(listener, "conversation.removed")["conversation_id"].as_i64.should eq(group.cid)
+        # The client never unfollows; the server must not deliver anyway.
+        bb.post("/api/conversations/#{group.cid}/messages", {body: "segredo"}).status_code.should eq(201)
+        bb.post("/api/conversations/#{other.cid}/messages", {body: "visível"}).status_code.should eq(201)
+        wait_for(listener, "message.created")["message"]["body"].as_s.should eq("visível")
+      ensure
+        listener.close
+      end
+    end
+  end
 end

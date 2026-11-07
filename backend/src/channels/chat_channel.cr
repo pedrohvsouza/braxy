@@ -15,10 +15,24 @@ class ChatChannel < Saci::Cable::Channel
 
   @user : User? = nil
 
+  # Live channels per user in this process, so a member removed from a
+  # conversation stops receiving it on the server side, without relying on
+  # the client to unfollow (see Invalidation.left).
+  @@live = {} of Int64 => Array(ChatChannel)
+  @@live_mutex = Mutex.new
+
+  def self.stop_following(conversation_id : Int64, user_id : Int64) : Nil
+    channels = @@live_mutex.synchronize { @@live[user_id]?.try(&.dup) }
+    return if channels.nil?
+    stream = Realtime.conversation_stream(conversation_id)
+    channels.each(&.stop_stream(stream))
+  end
+
   def subscribed
     user = current_user
     reject if user.nil?
     @user = user
+    @@live_mutex.synchronize { (@@live[user.uid] ||= [] of ChatChannel) << self }
     stream_from(Realtime.user_stream(user.uid))
     stream_from(Realtime::STATS_STREAM)
     Membership.conversation_ids_for(user.uid).each do |cid|
@@ -29,6 +43,12 @@ class ChatChannel < Saci::Cable::Channel
 
   def unsubscribed
     if user = @user
+      @@live_mutex.synchronize do
+        if list = @@live[user.uid]?
+          list.delete(self)
+          @@live.delete(user.uid) if list.empty?
+        end
+      end
       Presence.disconnected(user)
     end
   end
