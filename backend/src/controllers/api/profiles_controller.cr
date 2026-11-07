@@ -45,7 +45,8 @@ module Api
       end
       user.password = str_param("password")
       if user.save
-        # Keep this browser signed in after the change (fresh session id).
+        # Sign every other device out, keep this browser in (fresh session).
+        user.rotate_session_token!
         login(user)
         render json: {ok: true, csrf_token: form_authenticity_token}
       else

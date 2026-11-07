@@ -17,6 +17,7 @@ class User < ApplicationRecord
   column last_seen_at : Time
   column last_daily_xp_on : Date
   column last_message_xp_at : Time
+  column session_token : String
   timestamps
 
   has_secure_password
@@ -34,6 +35,13 @@ class User < ApplicationRecord
 
   def uid : Int64
     id.not_nil!
+  end
+
+  # Ends every session but the one logged in next (see
+  # ApplicationController#current_user).
+  def rotate_session_token! : Nil
+    update_columns(session_token: Random::Secure.urlsafe_base64(24))
+    Invalidation.user(uid)
   end
 
   def staff? : Bool

@@ -7,4 +7,6 @@ require "./migrate/20261106200004_create_messages"
 require "./migrate/20261106200005_create_reactions"
 require "./migrate/20261106200006_create_notifications"
 require "./migrate/20261106200007_create_xp_events"
-SACI_MIGRATIONS = [CreateUsers, CreateFriendships, CreateConversations, CreateMemberships, CreateMessages, CreateReactions, CreateNotifications, CreateXpEvents] of Saci::Record::Migration.class
+require "./migrate/20261107130000_create_password_resets"
+require "./migrate/20261107130001_add_session_token_to_users"
+SACI_MIGRATIONS = [CreateUsers, CreateFriendships, CreateConversations, CreateMemberships, CreateMessages, CreateReactions, CreateNotifications, CreateXpEvents, CreatePasswordResets, AddSessionTokenToUsers] of Saci::Record::Migration.class
