@@ -63,6 +63,9 @@ const WRK = [
   ["full30p4", "Pool de frames + single-flight de mensagens · 4 processos (wrk)"],
   ["full33p4", "Versões locais + INSERT com unnest · 4 processos (wrk)"],
   ["full35p4", "INSERT sem ON CONFLICT + GC por orçamento · 4 processos (wrk)"],
+  ["read-st35", "Marcar como lida: 1 UPDATE por requisição · 4 processos (wrk)"],
+  ["read-st36", "Marcar como lida: cursores em lote · 4 processos (wrk)"],
+  ["full38p4", "POST sem espera de lote · máquina compartilhada · 4 processos (wrk)"],
 ];
 
 const http = [];
@@ -77,7 +80,7 @@ for (const [slug, config] of WRK) {
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line.startsWith("POINT:")) continue;
     const p = JSON.parse(line.slice(6));
-    const names = { up: "GET /up", session: "GET /api/session", sidebar: "GET /api/sidebar", messages: "GET messages", post: "POST message" };
+    const names = { up: "GET /up", session: "GET /api/session", sidebar: "GET /api/sidebar", messages: "GET messages", post: "POST message", read: "POST read cursor" };
     http.push({ config, endpoint: p.endpoint, name: names[p.endpoint], connections: p.connections, rps: p.rps, p50: p.p50, p90: p.p90, p95: p.p95 ?? null, p99: p.p99, errors: p.errors + p.sockerr + p.timeouts, non2xx: 0 });
   }
 }
