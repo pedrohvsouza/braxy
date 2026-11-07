@@ -40,11 +40,33 @@ test("lobby: send, reply, react, edit and delete", async ({ page }) => {
   await expect(page.getByTestId("message").filter({ hasText: "mensagem apagada" }).first()).toBeVisible();
 });
 
-test("image upload shows inline", async ({ page }) => {
+test("image is previewed, captioned and shown inline", async ({ page }) => {
   await login(page, "julia");
   await openLobby(page);
   await page.getByTestId("image-input").setInputFiles(path.join(here, "fixtures", "eagle.png"));
-  await expect(page.getByTestId("message").last().locator("img[src^='/api/files/']").last()).toBeVisible();
+  await expect(page.getByTestId("attachment-preview")).toContainText("eagle.png");
+  const caption = unique("águia ");
+  await page.getByPlaceholder("Adicione uma legenda…").fill(caption);
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("attachment-preview")).toBeHidden();
+  const sent = page.getByTestId("message").filter({ hasText: caption });
+  await expect(sent.locator("img[src^='/api/files/']")).toBeVisible();
+});
+
+test("markdown and emoji picker", async ({ page }) => {
+  await login(page, "julia");
+  await openLobby(page);
+  const box = page.getByPlaceholder("Digite sua mensagem…");
+  const tag = unique("md");
+  await box.fill(`**${tag}** _ok_ \`code\` `);
+  await page.getByRole("button", { name: "Emojis" }).click();
+  await page.getByTestId("emoji-picker").getByRole("button", { name: "😎" }).click();
+  await box.press("Enter");
+  const sent = page.getByTestId("message").filter({ hasText: tag });
+  await expect(sent.locator("strong")).toHaveText(tag);
+  await expect(sent.locator("em")).toHaveText("ok");
+  await expect(sent.locator("code")).toHaveText("code");
+  await expect(sent).toContainText("😎");
 });
 
 test("realtime DM between two browsers: message, typing, seen", async ({ browser }) => {
@@ -115,4 +137,60 @@ test("create a group with a friend and mention them", async ({ browser }) => {
 
   await pedro.context().close();
   await julia.context().close();
+});
+
+interface BrowserGlobals {
+  __notes: { title: string; body?: string; tag?: string }[];
+  Notification: unknown;
+  document: { hasFocus: () => boolean };
+  localStorage: { setItem: (k: string, v: string) => void };
+}
+
+test("browser notifications for DMs while the app is in the background", async ({ browser }) => {
+  const pedro = await newSession(browser, "pedro");
+  const ctx = await browser.newContext();
+  // Record notifications instead of showing them, and pretend the window has no focus.
+  // (Runs in the page; the e2e tsconfig has no DOM types, hence the casts.)
+  await ctx.addInitScript(() => {
+    const w = globalThis as unknown as BrowserGlobals;
+    w.__notes = [];
+    class FakeNotification {
+      static permission = "granted";
+      static requestPermission = async () => "granted";
+      onclick: (() => void) | null = null;
+      constructor(title: string, opts: { body?: string; tag?: string } = {}) {
+        w.__notes.push({ title, body: opts.body, tag: opts.tag });
+      }
+      close() {}
+    }
+    w.Notification = FakeNotification;
+    w.document.hasFocus = () => false;
+    w.localStorage.setItem("braxy:desktop-notify", "on");
+  });
+  const marina = await ctx.newPage();
+  await login(marina, "marina");
+  await openLobby(marina);
+  await openLobby(pedro);
+
+  // Lobby chatter never pops a notification.
+  const lobby = unique("lobby ");
+  await pedro.getByPlaceholder("Digite sua mensagem…").fill(lobby);
+  await pedro.keyboard.press("Enter");
+  await expect(marina.getByTestId("message").filter({ hasText: lobby })).toBeVisible();
+
+  await pedro.getByTestId("friend-marina").click();
+  const dm = unique("segredo ");
+  await pedro.getByPlaceholder("Digite sua mensagem…").fill(`**${dm}** ||spoiler||`);
+  await pedro.keyboard.press("Enter");
+
+  const notes = () => marina.evaluate(() => (globalThis as unknown as BrowserGlobals).__notes);
+  await expect.poll(async () => (await notes()).length).toBe(1);
+  const [note] = await notes();
+  expect(note.title).toBe("Pedro Henrique");
+  expect(note.body).toBe(`${dm} ▒▒▒`);
+  expect(note.tag).toMatch(/^conv-\d+$/);
+  await expect(marina).toHaveTitle("(1) Braxy");
+
+  await pedro.context().close();
+  await ctx.close();
 });

@@ -23,11 +23,21 @@ function loadSound(): boolean {
   }
 }
 
+function loadDesktopNotify(): boolean {
+  try {
+    return localStorage.getItem("braxy:desktop-notify") === "on";
+  } catch {
+    return false;
+  }
+}
+
 interface UiState {
   connected: boolean;
   everConnected: boolean;
   latency: number | null;
   sound: boolean;
+  /** Native browser notifications while the app is in the background (opt-in). */
+  desktopNotify: boolean;
   sidebarOpen: boolean;
   modal: Modal;
   toasts: Toast[];
@@ -40,6 +50,7 @@ interface UiState {
   setConnected: (connected: boolean) => void;
   setLatency: (ms: number) => void;
   toggleSound: () => void;
+  setDesktopNotify: (on: boolean) => void;
   setSidebarOpen: (open: boolean) => void;
   openModal: (modal: Modal) => void;
   closeModal: () => void;
@@ -58,6 +69,7 @@ export const useUi = create<UiState>((set) => ({
   everConnected: false,
   latency: null,
   sound: loadSound(),
+  desktopNotify: loadDesktopNotify(),
   sidebarOpen: false,
   modal: null,
   toasts: [],
@@ -76,6 +88,14 @@ export const useUi = create<UiState>((set) => ({
       }
       return { sound: !s.sound };
     }),
+  setDesktopNotify: (desktopNotify) => {
+    try {
+      localStorage.setItem("braxy:desktop-notify", desktopNotify ? "on" : "off");
+    } catch {
+      /* private mode */
+    }
+    set({ desktopNotify });
+  },
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   openModal: (modal) => set({ modal, sidebarOpen: false }),
   closeModal: () => set({ modal: null }),

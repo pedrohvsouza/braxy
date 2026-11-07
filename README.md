@@ -55,18 +55,24 @@ make e2e             # playwright (com a stack no ar)
   grupos criados) e amigos com prévia, não lidas e presença.
 - Amizades (pedido, aceitar, recusar, desfazer); DM só entre amigos.
 - Mensagens em tempo real (Saci Cable + Redis): responder, @menção, editar,
-  apagar (autor, staff, dono do grupo), 6 reações, imagens até 10 MB (S3),
+  apagar (autor, staff, dono do grupo), 6 reações, imagens até 10 MB (S3)
+  com prévia e legenda antes de enviar (botão, colar ou arrastar),
   histórico paginado, "digitando…" e "Visto" nas DMs.
+- Markdown leve (`**negrito**`, `*itálico*`, `~~riscado~~`, `` `código` ``,
+  blocos ```` ``` ````, `> citação`, `||spoiler||`; Ctrl+B / Ctrl+I), emojis
+  sozinhos em tamanho grande e seletor de emojis com recentes.
 - XP/níveis (curva `50·n²`): +10 msg em grupo, +2 em DM (cooldown 10s), +50
   login diário, +20 amizade, +2 reação recebida; notificação ao subir.
-- Notificações (sino + toasts), som com a aba em segundo plano.
+- Notificações (sino + toasts), som com a aba em segundo plano, contador
+  no título da aba e notificações do navegador (opt-in nas Preferências:
+  DMs e grupos privados; no lobby só menções e respostas).
 - Perfil (nome, avatar, recado, aniversário, senha) e card de perfil.
 - Tela inicial com contadores ao vivo; latência real no rodapé.
 - i18n preparado (só pt-BR por enquanto); layout mobile.
 
-Fora do MVP: música, áudio, markdown, seletor completo de emojis, GIFs,
-bot/IA, VIP/loja, conquistas, moderação (mute/ban/bloqueio), reset de senha,
-notificações do navegador.
+Fora do MVP: música, áudio, busca de emojis, GIFs, bot/IA, VIP/loja,
+conquistas, moderação (mute/ban/bloqueio), reset de senha, push com a aba
+fechada (service worker).
 
 ## Contrato de tempo real
 

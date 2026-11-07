@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { activeConversation } from "../../hooks/useRealtime";
 import { t } from "../../i18n";
@@ -41,6 +41,10 @@ function Conversation({ id }: { id: number }) {
   const composer = useRef<ComposerHandle>(null);
   const stick = useRef(true);
   const prevHeight = useRef<number | null>(null);
+  /** Images of optimistic messages, by client id, so a retry skips re-uploading. */
+  const uploads = useRef(new Map<string, { file: File; preview: string; key?: string }>());
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
 
   // Active conversation bookkeeping (used by the realtime handler).
   useEffect(() => {
@@ -86,6 +90,18 @@ function Conversation({ id }: { id: number }) {
     }
   }, [messages]);
 
+  // The list shrinks when the composer grows (preview, reply bar, long
+  // drafts): stay pinned to the bottom if we were there.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [convo]);
+
   const onScroll = () => {
     const el = scroller.current;
     if (!el) return;
@@ -99,19 +115,39 @@ function Conversation({ id }: { id: number }) {
   const fail = (err: unknown) => pushToast({ text: err instanceof ApiError ? err.errors.join(", ") : t("common.error") });
 
   const deliver = useCallback(
-    async (draft: ChatMessage, payload: { body?: string; image_key?: string; reply_to_id?: number }) => {
+    async (draft: ChatMessage, payload: { body?: string; image_key?: string; reply_to_id?: number }): Promise<boolean> => {
       try {
         const { message } = await api.sendMessage(id, { ...payload, client_id: draft.client_id! });
         upsertMessage(qc, message);
+        return true;
       } catch (err) {
         patchMessage(qc, id, draft.id, { pending: false, failed: true });
         fail(err);
+        return false;
       }
     },
     [id, qc],
   );
 
-  const send = (body: string, imageUrl: string | null = null, imageKey?: string) => {
+  /** Uploads (once) and posts an optimistic image message. */
+  const deliverImage = async (draft: ChatMessage, payload: { body?: string; reply_to_id?: number }) => {
+    const entry = uploads.current.get(draft.client_id!);
+    if (!entry) return;
+    try {
+      entry.key ??= (await api.uploadImage(entry.file)).key;
+    } catch (err) {
+      patchMessage(qc, id, draft.id, { pending: false, failed: true });
+      fail(err);
+      return;
+    }
+    if (await deliver(draft, { ...payload, image_key: entry.key })) {
+      uploads.current.delete(draft.client_id!);
+      // The server copy has replaced the preview by now; give it time to paint.
+      window.setTimeout(() => URL.revokeObjectURL(entry.preview), 30_000);
+    }
+  };
+
+  const send = (body: string, imageUrl: string | null = null) => {
     const draft: ChatMessage = {
       id: -++tempSeq,
       conversation_id: id,
@@ -119,7 +155,7 @@ function Conversation({ id }: { id: number }) {
       body,
       image_url: imageUrl,
       reply_to: replyTo
-        ? { id: replyTo.id, author_name: replyTo.author?.name ?? "?", author_role: replyTo.author?.role ?? "member", preview: replyTo.body.slice(0, 80) || "📷 Imagem" }
+        ? { id: replyTo.id, author_name: replyTo.author?.name ?? "?", author_role: replyTo.author?.role ?? "member", preview: replyTo.body.slice(0, 80) || t("chat.image") }
         : null,
       reactions: [],
       edited: false,
@@ -130,33 +166,38 @@ function Conversation({ id }: { id: number }) {
     };
     stick.current = true;
     upsertMessage(qc, draft);
-    const payload = { body: body || undefined, image_key: imageKey, reply_to_id: replyTo?.id };
     setReplyTo(null);
-    void deliver(draft, payload);
+    return draft;
   };
 
-  const onImage = async (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      pushToast({ text: "Imagem maior que 10 MB" });
-      return;
-    }
-    pushToast({ text: t("chat.uploading") });
-    try {
-      const { key, url } = await api.uploadImage(file);
-      send("", url, key);
-    } catch (err) {
-      fail(err);
-    }
+  const sendText = (body: string) => {
+    const draft = send(body);
+    void deliver(draft, { body, reply_to_id: draft.reply_to?.id });
+  };
+
+  const sendImage = (file: File, preview: string, caption: string) => {
+    const draft = send(caption, preview);
+    uploads.current.set(draft.client_id!, { file, preview });
+    void deliverImage(draft, { body: caption || undefined, reply_to_id: draft.reply_to?.id });
   };
 
   const onRetry = (m: ChatMessage) => {
     patchMessage(qc, id, m.id, { pending: true, failed: false });
+    if (m.client_id && uploads.current.has(m.client_id)) {
+      void deliverImage(m, { body: m.body || undefined, reply_to_id: m.reply_to?.id });
+      return;
+    }
     const key = m.image_url?.split("/").pop();
     void deliver(m, { body: m.body || undefined, image_key: key, reply_to_id: m.reply_to?.id });
   };
 
   const onDelete = async (m: ChatMessage) => {
     if (m.failed) {
+      const entry = m.client_id ? uploads.current.get(m.client_id) : undefined;
+      if (entry) {
+        URL.revokeObjectURL(entry.preview);
+        uploads.current.delete(m.client_id!);
+      }
       removeMessage(qc, id, m.id);
       return;
     }
@@ -216,8 +257,36 @@ function Conversation({ id }: { id: number }) {
 
   const typers = Object.values(typing ?? {}).map((x) => x.name);
 
+  const hasFiles = (e: DragEvent) => !disabled && e.dataTransfer.types.includes("Files");
+
   return (
-    <section className={styles.chat}>
+    <section
+      className={styles.chat}
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+      }}
+      onDragOver={(e) => {
+        if (hasFiles(e)) e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        const files = [...e.dataTransfer.files];
+        const pick = files.find((f) => f.type.startsWith("image/")) ?? files[0];
+        if (pick) composer.current?.attach(pick);
+      }}
+    >
+      {dragging && <div className={styles.dropOverlay}>{t("chat.dropImage")}</div>}
       <ChatHeader convo={convo} me={me} online={otherOnline} />
       <div className={styles.scroller} ref={scroller} onScroll={onScroll} data-testid="message-list">
         {isLoading && <p className={styles.notice}>{t("common.loading")}</p>}
@@ -260,9 +329,10 @@ function Conversation({ id }: { id: number }) {
           setReplyTo(null);
           setEditing(null);
         }}
-        onSend={(body) => send(body)}
+        onSend={sendText}
         onSaveEdit={onSaveEdit}
-        onImage={onImage}
+        onSendImage={sendImage}
+        onError={(text) => pushToast({ text })}
       />
     </section>
   );

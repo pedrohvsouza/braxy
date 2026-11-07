@@ -6,6 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { t } from "../../i18n";
 import { api } from "../../lib/api";
 import { shortTime } from "../../lib/format";
+import { plainText } from "../../lib/markup";
 import { keys, useFriendships, useSidebar } from "../../lib/queries";
 import { roleLabel } from "../../lib/roles";
 import type { SidebarFriend, SidebarGroup } from "../../lib/types";
@@ -57,7 +58,7 @@ function GroupRow({ g, active }: { g: SidebarGroup; active: boolean }) {
             {typers.length
               ? t("chat.typingOne", { name: typers[0] })
               : g.last_message
-                ? `${g.last_message.author_name}: ${g.last_message.preview}`
+                ? `${g.last_message.author_name}: ${plainText(g.last_message.preview)}`
                 : t("sidebar.noMessages")}
           </span>
           {g.unread > 0 && <span className="badge">{g.unread > 99 ? "99+" : g.unread}</span>}
@@ -95,7 +96,7 @@ function FriendRow({ f, active }: { f: SidebarFriend; active: boolean }) {
             {typing
               ? t("chat.typingOne", { name: f.user.name })
               : f.last_message
-                ? `${f.last_message.author_name === "Você" ? "Você: " : ""}${f.last_message.preview}`
+                ? `${f.last_message.author_name === "Você" ? "Você: " : ""}${plainText(f.last_message.preview)}`
                 : roleLabel(f.user.role) + " · " + t("sidebar.startChat")}
           </span>
           {f.unread > 0 && <span className="badge">{f.unread > 99 ? "99+" : f.unread}</span>}
