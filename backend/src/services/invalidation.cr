@@ -71,6 +71,8 @@ module Invalidation
       parts[1]?.try { |payload| MessagePageCache.observe_announcement(payload) }
     when "sidebar"
       parts[1]?.try(&.to_i64?).try { |id| SidebarCache.invalidate(id) }
+    when "sidebars"
+      parts[1]?.try &.split(',') { |id| id.to_i64?.try { |i| SidebarCache.invalidate(i) } }
     end
   end
 
@@ -94,6 +96,11 @@ module Invalidation
 
   def self.sidebar(user_id : Int64) : Nil
     publish("sidebar:#{user_id}")
+  end
+
+  # Several users' sidebars in one announcement.
+  def self.sidebars(user_ids : Array(Int64)) : Nil
+    user_ids.each_slice(2000) { |ids| publish("sidebars:#{ids.join(',')}") }
   end
 
   def self.friends(a : Int64, b : Int64) : Nil

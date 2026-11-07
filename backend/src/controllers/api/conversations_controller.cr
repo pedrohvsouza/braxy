@@ -140,6 +140,15 @@ module Api
     end
 
     def read
+      # Groups and the lobby: coalesced, no I/O here (see ReadCursors).
+      if (cached = Access.conversation(params["id"]?.try(&.to_i64?) || 0_i64)) && !cached.dm?
+        convo = member_conversation
+        return if convo.nil?
+        upto = id_param("message_id") || Int64::MAX
+        ReadCursors.note(convo.cid, me.uid, upto)
+        render json: {ok: true}
+        return
+      end
       convo = member_conversation(fresh: true) # needs the current last_message_id
       return if convo.nil?
       membership = convo.membership_for(me.uid).not_nil!
