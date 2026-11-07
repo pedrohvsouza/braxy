@@ -2,13 +2,15 @@ import {
   faFaceSmile, faImage, faPaperPlane, faVolumeHigh, faVolumeXmark, faXmark,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { t } from "../../i18n";
 import type { ChatMessage } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { cableSend } from "../../hooks/useRealtime";
 import styles from "./Chat.module.css";
-import { EmojiPicker } from "./EmojiPicker";
+
+// The picker (and its emoji names) loads on first open.
+const EmojiPicker = lazy(() => import("./EmojiPicker").then((m) => ({ default: m.EmojiPicker })));
 
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -198,7 +200,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       )}
       <div className={styles.composer}>
         {emojiOpen && (
-          <EmojiPicker onPick={insertAtCaret} onClose={() => setEmojiOpen(false)} />
+          <Suspense fallback={null}>
+            <EmojiPicker onPick={insertAtCaret} onClose={() => setEmojiOpen(false)} />
+          </Suspense>
         )}
         <textarea
           ref={area}

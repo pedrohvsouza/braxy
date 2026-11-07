@@ -60,7 +60,9 @@ test("markdown and emoji picker", async ({ page }) => {
   const tag = unique("md");
   await box.fill(`**${tag}** _ok_ \`code\` `);
   await page.getByRole("button", { name: "Emojis" }).click();
-  await page.getByTestId("emoji-picker").getByRole("button", { name: "😎" }).click();
+  const picker = page.getByTestId("emoji-picker");
+  await picker.getByRole("searchbox").fill("oculos escuros");
+  await picker.getByRole("button", { name: "rosto sorridente com óculos escuros" }).click();
   await box.press("Enter");
   const sent = page.getByTestId("message").filter({ hasText: tag });
   await expect(sent.locator("strong")).toHaveText(tag);

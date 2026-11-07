@@ -68,12 +68,12 @@ describe("Composer", () => {
     expect(screen.queryByTestId("attachment-preview")).toBeNull();
   });
 
-  it("inserts emoji at the caret and remembers recents", () => {
+  it("inserts emoji at the caret and remembers recents", async () => {
     const { box } = setup();
     fireEvent.change(box, { target: { value: "oi tudo" } });
     box.setSelectionRange(2, 2);
     fireEvent.click(screen.getByRole("button", { name: "Emojis" }));
-    fireEvent.click(screen.getByRole("button", { name: "😂" }));
+    fireEvent.click(await screen.findByRole("button", { name: "rosto chorando de rir" }));
     expect(box.value).toBe("oi😂 tudo");
     expect(JSON.parse(localStorage.getItem("braxy:emoji-recent")!)).toEqual(["😂"]);
   });

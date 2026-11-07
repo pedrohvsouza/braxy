@@ -125,6 +125,9 @@ export const ptBR = {
   "chat.image": "📷 Imagem",
 
   "emoji.recent": "Recentes",
+  "emoji.search": "Buscar emoji (ex.: rir, coração, fogo)",
+  "emoji.results": "Resultados ({count})",
+  "emoji.none": "Nenhum emoji com esse nome.",
   "emoji.smileys": "Rostos",
   "emoji.people": "Gestos e pessoas",
   "emoji.hearts": "Corações e símbolos",

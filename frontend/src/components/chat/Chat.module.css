@@ -533,6 +533,30 @@
   animation: rise 0.14s ease-out;
 }
 
+.emojiSearch {
+  margin: 8px 8px 2px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.emojiSearch:focus {
+  border-color: var(--accent);
+}
+
+.emojiEmpty {
+  grid-column: 1 / -1;
+  margin: 24px 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .emojiTabs {
   display: flex;
   gap: 2px;
