@@ -2,6 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
+import {
+  notifyPermission, type NotifyPermission, requestNotifyPermission, showDesktopNotification,
+} from "../../lib/desktopNotify";
 import { keys, useMe } from "../../lib/queries";
 import type { Me } from "../../lib/types";
 import { useUi } from "../../store/ui";
@@ -144,11 +147,39 @@ function PasswordForm() {
 function Prefs() {
   const sound = useUi((s) => s.sound);
   const toggle = useUi((s) => s.toggleSound);
+  const desktop = useUi((s) => s.desktopNotify);
+  const setDesktop = useUi((s) => s.setDesktopNotify);
+  const [permission, setPermission] = useState<NotifyPermission>(notifyPermission);
+  const enabled = desktop && permission === "granted";
+
+  const onDesktop = async (on: boolean) => {
+    if (!on) return setDesktop(false);
+    const next = permission === "granted" ? permission : await requestNotifyPermission();
+    setPermission(next);
+    setDesktop(next === "granted");
+    if (next === "granted") {
+      showDesktopNotification({ title: "Braxy", body: t("settings.notifyTest"), tag: "braxy-test" });
+    }
+  };
+
   return (
-    <label className={styles.check}>
-      <input type="checkbox" checked={sound} onChange={toggle} />
-      {t("settings.sound")}
-    </label>
+    <div className={styles.form}>
+      <label className={styles.check}>
+        <input type="checkbox" checked={sound} onChange={toggle} />
+        {t("settings.sound")}
+      </label>
+      <label className={styles.check}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          disabled={permission === "unsupported" || permission === "denied"}
+          onChange={(e) => void onDesktop(e.target.checked)}
+        />
+        {t("settings.desktopNotify")}
+      </label>
+      {permission === "denied" && <p className={styles.hint}>{t("settings.notifyDenied")}</p>}
+      {permission === "unsupported" && <p className={styles.hint}>{t("settings.notifyUnsupported")}</p>}
+    </div>
   );
 }
 

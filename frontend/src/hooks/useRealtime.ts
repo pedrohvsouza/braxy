@@ -1,8 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useOpenNotification } from "../components/notifications/NotificationList";
+import { t } from "../i18n";
 import { api } from "../lib/api";
 import { Cable, type CableEvent } from "../lib/cable";
+import { appInFocus, bumpTitleBadge, clearTitleBadge, showDesktopNotification } from "../lib/desktopNotify";
+import { plainText } from "../lib/markup";
 import { notificationText } from "../lib/notificationText";
 import {
   bumpSidebar, keys, lastMessageId, patchMessage, prependNotification, setStats, upsertMessage,
@@ -26,9 +30,45 @@ export function useRealtime(me: Me): void {
   const navigate = useNavigate();
   const meRef = useRef(me);
   meRef.current = me;
+  const openNotification = useOpenNotification();
+  const openRef = useRef(openNotification);
+  openRef.current = openNotification;
 
   useEffect(() => {
     const ui = useUi.getState;
+
+    // DMs and private groups surface in the background; the lobby is too busy,
+    // so there only mentions and replies do (as notification.created).
+    const notifyMessage = (msg: ChatMessage) => {
+      const cid = msg.conversation_id;
+      const group = qc.getQueryData<SidebarData>(keys.sidebar)?.groups.find((g) => g.conversation_id === cid);
+      if (group?.kind === "lobby") return;
+      bumpTitleBadge();
+      if (!ui().desktopNotify) return;
+      const author = msg.author?.name ?? t("common.someone");
+      showDesktopNotification({
+        title: group ? t("notify.inGroup", { name: author, group: group.name }) : author,
+        body: msg.body ? plainText(msg.body) : t("chat.image"),
+        icon: msg.author?.avatar_url,
+        tag: `conv-${cid}`,
+        silent: ui().sound,
+        onClick: () => navigate(`/c/${cid}`),
+      });
+    };
+
+    const notifyNotification = (n: AppNotification) => {
+      bumpTitleBadge();
+      if (!ui().desktopNotify) return;
+      showDesktopNotification({
+        title: "Braxy",
+        body: notificationText(n),
+        icon: n.actor?.avatar_url,
+        // A mention replaces the plain "new message" one for the same chat.
+        tag: n.conversation_id ? `conv-${n.conversation_id}` : `notif-${n.id}`,
+        silent: ui().sound,
+        onClick: () => openRef.current(n),
+      });
+    };
 
     const onMessage = (msg: ChatMessage, created: boolean) => {
       upsertMessage(qc, msg);
@@ -39,6 +79,7 @@ export function useRealtime(me: Me): void {
         void qc.invalidateQueries({ queryKey: keys.sidebar });
       }
       if (!mine && (document.hidden || !active) && ui().sound) playPing();
+      if (!mine && !appInFocus()) notifyMessage(msg);
       if (!mine && active && !document.hidden) void api.markRead(msg.conversation_id, msg.id).catch(() => undefined);
     };
 
@@ -78,6 +119,7 @@ export function useRealtime(me: Me): void {
         prependNotification(qc, n, Number(e.unread_count));
         ui().pushToast({ text: notificationText(n), notification: n });
         if (ui().sound) playPing();
+        if (!appInFocus()) notifyNotification(n);
         if (n.kind === "friend_request" || n.kind === "friend_accepted") {
           void qc.invalidateQueries({ queryKey: keys.friendships });
         }
@@ -143,7 +185,15 @@ export function useRealtime(me: Me): void {
     });
     cableRef = cable;
     const prune = window.setInterval(() => ui().pruneTyping(), 1000);
+    const onFocus = () => {
+      if (appInFocus()) clearTitleBadge();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
     return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+      clearTitleBadge();
       window.clearInterval(prune);
       cable.close();
       cableRef = null;

@@ -101,6 +101,23 @@ export const ptBR = {
   "chat.uploading": "Enviando imagem…",
   "chat.notFriends": "Vocês não são mais amigos.",
   "chat.newMessages": "Novas mensagens",
+  "chat.spoiler": "Revelar spoiler",
+  "chat.emoji": "Emojis",
+  "chat.caption": "Adicione uma legenda…",
+  "chat.removeImage": "Remover imagem",
+  "chat.dropImage": "Solte a imagem para anexar",
+  "chat.imageTooBig": "Imagem maior que 10 MB",
+  "chat.imageType": "Formato não suportado. Use PNG, JPEG, GIF ou WebP.",
+  "chat.formatHint": "**negrito**  *itálico*  ~~riscado~~  `código`  ||spoiler||  > citação",
+  "chat.image": "📷 Imagem",
+
+  "emoji.recent": "Recentes",
+  "emoji.smileys": "Rostos",
+  "emoji.people": "Gestos e pessoas",
+  "emoji.hearts": "Corações e símbolos",
+  "emoji.nature": "Animais e natureza",
+  "emoji.food": "Comida e bebida",
+  "emoji.activity": "Atividades e objetos",
 
   "group.createTitle": "Criar grupo",
   "group.name": "Nome do grupo",
@@ -139,6 +156,12 @@ export const ptBR = {
   "settings.changePassword": "Alterar senha",
   "settings.passwordChanged": "Senha alterada!",
   "settings.sound": "Tocar som quando chegar mensagem com a aba em segundo plano",
+  "settings.desktopNotify": "Mostrar notificações do navegador quando o Braxy estiver em segundo plano",
+  "settings.notifyDenied": "As notificações estão bloqueadas neste navegador. Libere nas configurações do site para ativar.",
+  "settings.notifyUnsupported": "Este navegador não suporta notificações.",
+  "settings.notifyTest": "Tudo certo! As notificações do Braxy aparecerão assim.",
+
+  "notify.inGroup": "{name} em {group}",
 
   "notif.title": "Notificações",
   "notif.empty": "Nada por aqui ainda.",
@@ -161,6 +184,7 @@ export const ptBR = {
   "common.close": "Fechar",
   "common.error": "Algo deu errado.",
   "common.you": "Você",
+  "common.someone": "Alguém",
   "common.loading": "Carregando…",
 };
 

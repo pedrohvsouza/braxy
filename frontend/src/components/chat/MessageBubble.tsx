@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { memo, useState } from "react";
 import { t } from "../../i18n";
 import { fullTimestamp } from "../../lib/format";
+import { isJumboEmoji, plainText } from "../../lib/markup";
 import type { ChatMessage, Me } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { Avatar } from "../common/Avatar";
@@ -58,7 +59,7 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
           {m.reply_to && !m.deleted && (
             <button type="button" className={styles.quote} onClick={() => props.onJump(m.reply_to!.id)}>
               <span className={`role-name role-${m.reply_to.author_role}`}>{m.reply_to.author_name}</span>
-              <span>{m.reply_to.preview}</span>
+              <span>{plainText(m.reply_to.preview)}</span>
             </button>
           )}
 
@@ -67,9 +68,9 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
           ) : (
             <>
               {m.body && (
-                <p className={styles.body}>
+                <div className={`${styles.body} ${isJumboEmoji(m.body) ? styles.jumbo : ""}`}>
                   <RichText text={m.body} me={me.username} />
-                </p>
+                </div>
               )}
               {m.image_url && (
                 <a href={m.image_url} target="_blank" rel="noreferrer" className={styles.image}>
@@ -82,6 +83,7 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
           <div className={styles.meta}>
             <time dateTime={m.created_at}>{fullTimestamp(m.created_at)}</time>
             {m.edited && !m.deleted && <span>· {t("chat.edited")}</span>}
+            {m.pending && m.image_url && <span>· {t("chat.uploading")}</span>}
             {m.failed && (
               <button type="button" className={styles.failed} onClick={() => props.onRetry(m)}>
                 {t("chat.failed")}
