@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
 import {
   notifyPermission, type NotifyPermission, requestNotifyPermission, showDesktopNotification,
 } from "../../lib/desktopNotify";
+import { disablePush, enablePush, pushEnabled, pushKey, pushSupported } from "../../lib/push";
 import { keys, useMe } from "../../lib/queries";
 import type { Me } from "../../lib/types";
 import { useUi } from "../../store/ui";
@@ -187,7 +188,58 @@ function Prefs() {
       </label>
       {permission === "denied" && <p className={styles.hint}>{t("settings.notifyDenied")}</p>}
       {permission === "unsupported" && <p className={styles.hint}>{t("settings.notifyUnsupported")}</p>}
+      <PushPref permission={permission} onPermission={setPermission} />
     </div>
+  );
+}
+
+/** Web Push with Braxy closed; shown only when the server has a VAPID key. */
+function PushPref({ permission, onPermission }: { permission: NotifyPermission; onPermission: (p: NotifyPermission) => void }) {
+  const [key, setKey] = useState<string | null>(null);
+  const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!pushSupported()) return;
+    let live = true;
+    void pushKey().then((k) => live && setKey(k));
+    void pushEnabled().then((v) => live && setOn(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!key) return null;
+
+  const toggle = async (next: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (next) {
+        const granted = permission === "granted" ? permission : await requestNotifyPermission();
+        onPermission(granted);
+        if (granted !== "granted") return;
+        await enablePush(key);
+      } else {
+        await disablePush();
+      }
+      setOn(next);
+    } catch {
+      setError(t("settings.pushFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <label className={styles.check}>
+        <input type="checkbox" checked={on} disabled={busy || permission === "denied"} onChange={(e) => void toggle(e.target.checked)} />
+        {t("settings.push")}
+      </label>
+      {error && <p className={styles.hint}>{error}</p>}
+    </>
   );
 }
 

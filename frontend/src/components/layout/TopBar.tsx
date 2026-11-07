@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { t } from "../../i18n";
 import { api } from "../../lib/api";
+import { disablePush } from "../../lib/push";
 import { keys, useMe, useNotifications } from "../../lib/queries";
 import { useUi } from "../../store/ui";
 import { Dropdown, MenuItem } from "../common/Dropdown";
@@ -24,6 +25,7 @@ export function TopBar() {
   const unread = notifications?.unread_count ?? 0;
 
   const logout = async () => {
+    await disablePush();
     await api.logout().catch(() => undefined);
     navigate("/");
     // Flip the session first (App unmounts the shell), then drop the rest.

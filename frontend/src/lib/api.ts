@@ -151,4 +151,8 @@ export const api = {
   readAllNotifications: () => post<{ unread_count: number }>("/api/notifications/read_all"),
 
   stats: () => get<{ stats: Stats }>("/api/stats"),
+
+  pushKey: () => get<{ key: string | null }>("/api/push/key"),
+  pushSubscribe: (sub: { endpoint: string; keys: Record<string, string> }) => post<{ ok: boolean }>("/api/push/subscriptions", sub),
+  pushUnsubscribe: (endpoint: string) => request<{ ok: boolean }>("DELETE", "/api/push/subscriptions", { endpoint }),
 };

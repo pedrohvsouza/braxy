@@ -245,6 +245,8 @@ export const ptBR = {
   "settings.desktopNotify": "Mostrar notificações do navegador quando o Braxy estiver em segundo plano",
   "settings.notifyDenied": "As notificações estão bloqueadas neste navegador. Libere nas configurações do site para ativar.",
   "settings.notifyUnsupported": "Este navegador não suporta notificações.",
+  "settings.push": "Avisar neste aparelho mesmo com o Braxy fechado (DMs, grupos e menções)",
+  "settings.pushFailed": "Não foi possível ativar os avisos neste navegador.",
   "settings.notifyTest": "Tudo certo! As notificações do Braxy aparecerão assim.",
 
   "notify.inGroup": "{name} em {group}",
