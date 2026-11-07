@@ -119,11 +119,16 @@ module MessageWriter
   # is the same for every batch size: two prepared statements in all,
   # instead of one per size, each with 8 parameters to bind rather than 8
   # per row.
+  #
+  # The batch first goes in as a plain INSERT: ON CONFLICT's speculative
+  # insertion costs Postgres about 3x more per row, and duplicates (a
+  # client retrying a post) are rare. A batch that hits one fails as a
+  # whole, with nothing written, and is retried with ON CONFLICT DO NOTHING.
   INSERT_SQL = "WITH v AS (SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::bigint[], $6::text[]) " \
                "WITH ORDINALITY AS t(conversation_id, author_id, body, image_key, reply_to_id, client_id, ord)), " \
                "ins AS (INSERT INTO messages (conversation_id, author_id, body, image_key, reply_to_id, client_id, created_at, updated_at) " \
                "SELECT conversation_id, author_id, body, image_key, reply_to_id, client_id, $7::timestamp, $7::timestamp FROM v ORDER BY ord " \
-               "ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id, client_id, created_at)"
+               "RETURNING id, author_id, client_id, created_at)"
   XP_SQL = ", xp AS (SELECT * FROM unnest($8::bigint[], $9::text[], $10::bigint[]) AS x(uid, cid, amt)), " \
            "xpe AS (INSERT INTO xp_events (user_id, kind, amount, source_key, created_at, updated_at) " \
            "SELECT ins.author_id, 'message', xp.amt, 'message:' || ins.id, ins.created_at, ins.created_at " \
@@ -131,9 +136,16 @@ module MessageWriter
            "ON CONFLICT (user_id, kind, source_key) DO NOTHING RETURNING user_id, amount), " \
            "upd AS (UPDATE users AS u SET xp = u.xp + t.amt FROM " \
            "(SELECT user_id, sum(amount)::bigint AS amt FROM xpe GROUP BY user_id) AS t WHERE u.id = t.user_id)"
-  SELECT_SQL       = " SELECT id, author_id, client_id, created_at FROM ins"
-  BATCH_SQL        = INSERT_SQL + SELECT_SQL
-  BATCH_PAYING_SQL = INSERT_SQL + XP_SQL + SELECT_SQL
+  SELECT_SQL             = " SELECT id, author_id, client_id, created_at FROM ins"
+  INSERT_ON_CONFLICT_SQL = INSERT_SQL.sub("RETURNING id, author_id", "ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id")
+  # {with ON CONFLICT, with XP} => statement
+  BATCH_SQL = {
+    {false, false} => INSERT_SQL + SELECT_SQL,
+    {false, true}  => INSERT_SQL + XP_SQL + SELECT_SQL,
+    {true, false}  => INSERT_ON_CONFLICT_SQL + SELECT_SQL,
+    {true, true}   => INSERT_ON_CONFLICT_SQL + XP_SQL + SELECT_SQL,
+  }
+  UNIQUE_VIOLATION = "23505"
 
   private def self.write_batch(batch : Array(Job)) : Nil
     now = Time.utc
@@ -144,9 +156,7 @@ module MessageWriter
       msgs.map(&.client_id.not_nil!), now,
     ] of BatchArg
     paying = batch.select { |job| job.xp > 0 }
-    sql = BATCH_SQL
     unless paying.empty?
-      sql = BATCH_PAYING_SQL
       args << paying.map(&.message.author_id.not_nil!)
       args << paying.map(&.message.client_id.not_nil!)
       args << paying.map(&.xp.to_i64)
@@ -155,14 +165,12 @@ module MessageWriter
     inserted = {} of {Int64, String} => {Int64, Time}
     db = Saci::Record.connection.as(DB::Database)
     db.using_connection do |conn|
-      conn.query(sql, args: args) do |rs|
-        rs.each do
-          id = rs.read(Int64)
-          author = rs.read(Int64)
-          client = rs.read(String)
-          at = rs.read(Time)
-          inserted[{author, client}] = {id, at}
-        end
+      begin
+        insert_rows(conn, BATCH_SQL[{false, !paying.empty?}], args, inserted)
+      rescue ex : PQ::PQError
+        raise ex unless ex.field_message(:code) == UNIQUE_VIOLATION
+        inserted.clear
+        insert_rows(conn, BATCH_SQL[{true, !paying.empty?}], args, inserted)
       end
     end
 
@@ -190,6 +198,18 @@ module MessageWriter
           m.reply_to_id = existing.reply_to_id
           m.__saci_mark_persisted!
         end
+      end
+    end
+  end
+
+  private def self.insert_rows(conn : DB::Connection, sql : String, args : Array(BatchArg), into : Hash({Int64, String}, {Int64, Time})) : Nil
+    conn.query(sql, args: args) do |rs|
+      rs.each do
+        id = rs.read(Int64)
+        author = rs.read(Int64)
+        client = rs.read(String)
+        at = rs.read(Time)
+        into[{author, client}] = {id, at}
       end
     end
   end
