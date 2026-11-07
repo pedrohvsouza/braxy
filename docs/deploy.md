@@ -87,3 +87,23 @@ e troque o `--build` por `docker compose ... pull && docker compose ... up -d --
   (limite do container ÷ processos, com folga para sockets).
 - Mais de um servidor: aponte todos para o mesmo Postgres e Redis (o Redis já
   leva o fan-out do Cable, a presença e os rate limits entre processos).
+
+## Observabilidade
+
+- **Logs:** JSON, um objeto por linha no stdout (`SACI_LOG_FORMAT=json`;
+  `docker compose ... logs backend`). Em produção o nível é `warn`;
+  `LOG_LEVEL=info` acrescenta uma linha por requisição (método, caminho,
+  status, duração, request id, IP). Erros 500 não tratados saem como
+  `level: ERROR` com a exceção (o binário é `--no-debug`, então o backtrace
+  vem sem nomes de função). O Caddy também loga em JSON.
+- **Métricas:** com `METRICS_TOKEN` definido, `GET http://backend:3000/metrics`
+  (Prometheus) dentro da rede do compose; o Caddy não encaminha `/metrics`.
+  O scraper precisa mandar `Authorization: Bearer <METRICS_TOKEN>` e
+  `X-Forwarded-Proto: https` (senão o `force_ssl` redireciona). Séries:
+  `saci_requests_total`, por status e por rota (contagem e soma da duração),
+  e por processo `braxy_cable_connections`, `braxy_gc_heap_bytes`,
+  `braxy_gc_free_bytes`, `braxy_process_rss_bytes`, `braxy_uptime_seconds`.
+- **Limite:** cada processo do `bin/multi` tem seus contadores, e cada scrape
+  cai num processo qualquer (`SO_REUSEPORT`), identificado pelo rótulo `pid`.
+  Some ou tire a média por `pid` no Prometheus; uma visão agregada por
+  container depende do Saci (ver o relatório da frente D).

@@ -3,6 +3,7 @@ module BraxyRoutes
   def self.build : Saci::Router
     Saci::Router.new.draw do |r|
       r.get "/up", HealthController, :show
+      r.get "/metrics", MetricsController, :show
       # Load-test diagnostics only (BENCH_DEBUG=1): GC heap numbers.
       if ENV["BENCH_DEBUG"]? == "1"
         r.get("/__gc") do |ctx, _params|
