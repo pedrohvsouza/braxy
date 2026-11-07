@@ -7,7 +7,8 @@
 # removed from a group loses access everywhere at once).
 #
 # Messages: "user:<id>", "conv:<id>", "member:<cid>:<uid>", "friends:<a>:<b>",
-# "vers:<cid>=<n>,..." (conversation versions, see MessagePageCache).
+# "vers:<cid>=<n>,..." (conversation versions, see MessagePageCache),
+# "blocks:<uid>", "sanctions:<cid>" (see Moderation).
 module Invalidation
   CHANNEL = "braxy:invalidate"
 
@@ -69,6 +70,10 @@ module Invalidation
       end
     when "vers"
       parts[1]?.try { |payload| MessagePageCache.observe_announcement(payload) }
+    when "blocks"
+      parts[1]?.try(&.to_i64?).try { |id| Moderation.invalidate_blocks(id) }
+    when "sanctions"
+      parts[1]?.try(&.to_i64?).try { |id| Moderation.invalidate_sanctions(id) }
     when "sidebar"
       parts[1]?.try(&.to_i64?).try { |id| SidebarCache.invalidate(id) }
     when "sidebars"
@@ -77,6 +82,7 @@ module Invalidation
   end
 
   private def self.clear_all : Nil
+    Moderation.clear!
     UserCache.clear!
     Access.clear!
     SidebarCache.clear!

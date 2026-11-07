@@ -131,6 +131,7 @@ def with_app(&)
   KV.reset!
   UserCache.clear!
   Access.clear!
+  Moderation.clear!
   MessagePageCache.clear!
   SidebarCache.clear!
   Xp.reset_memo!

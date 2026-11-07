@@ -168,9 +168,18 @@ class Conversation < ApplicationRecord
       owner_id:     owner_id,
       can_manage:   !dm? && !lobby? && owner?(viewer.uid),
       can_moderate: can_moderate?(viewer),
+      muted_until:  mute_json(viewer),
       member_count: total,
       members:      Conversation.members_json(members),
     }
+  end
+
+  # The viewer's own mute here: nil, an ISO time, or "forever".
+  private def mute_json(viewer : User) : String?
+    return nil if dm?
+    muted, until_ = Moderation.mute_of(cid, viewer.uid)
+    return nil unless muted
+    until_.try(&.to_rfc3339) || "forever"
   end
 
   private def normalize : Nil

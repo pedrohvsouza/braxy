@@ -29,6 +29,10 @@ module BraxyRoutes
       r.get "/api/users", Api::UsersController, :index
       r.get "/api/users/:username", Api::UsersController, :show
 
+      r.get "/api/blocks", Api::BlocksController, :index
+      r.post "/api/blocks", Api::BlocksController, :create
+      r.delete "/api/blocks/:user_id", Api::BlocksController, :destroy
+
       r.get "/api/friendships", Api::FriendshipsController, :index
       r.post "/api/friendships", Api::FriendshipsController, :create
       r.post "/api/friendships/:id/accept", Api::FriendshipsController, :accept
@@ -44,6 +48,9 @@ module BraxyRoutes
       r.post "/api/conversations/:id/members", Api::ConversationsController, :add_members
       r.delete "/api/conversations/:id/members/:user_id", Api::ConversationsController, :remove_member
       r.post "/api/conversations/:id/read", Api::ConversationsController, :read
+      r.get "/api/conversations/:id/sanctions", Api::SanctionsController, :index
+      r.post "/api/conversations/:id/sanctions", Api::SanctionsController, :create
+      r.delete "/api/conversations/:id/sanctions/:user_id", Api::SanctionsController, :destroy
 
       r.get "/api/conversations/:id/messages", Api::MessagesController, :index
       r.post "/api/conversations/:id/messages", Api::MessagesController, :create

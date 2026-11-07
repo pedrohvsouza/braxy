@@ -7,7 +7,7 @@ describe "notifications API" do
       ana = Fixtures.user("ana")
       bb = Fixtures.browser(app, bob)
       bb.post("/api/notifications/read_all") # first-login level-up
-      n1 = Notification.deliver!(bob.uid, "friend_request", actor_id: ana.uid)
+      n1 = Notification.deliver!(bob.uid, "friend_request", actor_id: ana.uid).not_nil!
       Notification.deliver!(bob.uid, "level_up", payload: {"level" => 3})
       data = bb.json("/api/notifications")
       data["unread_count"].as_i.should eq(2)

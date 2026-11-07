@@ -20,7 +20,9 @@ class Notification < ApplicationRecord
   # Creates the row and pushes it to the recipient's personal stream.
   def self.deliver!(user_id : Int64, kind : String, actor_id : Int64? = nil,
                     conversation_id : Int64? = nil, message_id : Int64? = nil,
-                    payload : Hash(String, String | Int64 | Int32 | Nil)? = nil) : Notification
+                    payload : Hash(String, String | Int64 | Int32 | Nil)? = nil) : Notification?
+    # Nothing from people the recipient blocked (mentions, replies, ...).
+    return nil if actor_id && Moderation.blocked_ids(user_id).includes?(actor_id)
     n = create!(
       user_id: user_id, kind: kind, actor_id: actor_id,
       conversation_id: conversation_id, message_id: message_id,

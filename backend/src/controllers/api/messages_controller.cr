@@ -50,6 +50,12 @@ module Api
           forbidden("Vocês não são mais amigos")
           return
         end
+      else
+        muted, until_ = Moderation.mute_of(convo.cid, me.uid)
+        if muted
+          forbidden(until_ ? "Você está silenciado nesta conversa até #{until_.in(Xp::BRT).to_s("%H:%M")}" : "Você está silenciado nesta conversa")
+          return
+        end
       end
       message, created = Messaging.post(me, convo, str_param("body"), str_param("image_key"),
         id_param("reply_to_id"), str_param("client_id"))

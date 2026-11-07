@@ -89,6 +89,7 @@ class User < ApplicationRecord
       joined_at:    created_at.try(&.to_rfc3339),
       friendship:   viewer ? Friendship.status_json(viewer.uid, uid) : nil,
       achievements: UserAchievement.for_user(uid).map { |(key, at)| {key: key, unlocked_at: at.try(&.to_rfc3339)} },
+      blocked:      viewer ? Moderation.blocked_ids(viewer.uid).includes?(uid) : false,
     }
   end
 
@@ -116,7 +117,10 @@ class User < ApplicationRecord
     q = term.strip.downcase.lchop("@")
     return [] of User if q.empty?
     like = "%#{q.gsub(/[%_\\]/) { |c| "\\#{c}" }}%"
-    User.where("(LOWER(username) LIKE ? OR LOWER(name) LIKE ?) AND id <> ?", like, like, exclude_id)
+    User.where("(LOWER(username) LIKE ? OR LOWER(name) LIKE ?) AND id <> ? " \
+               "AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) " \
+               "AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id = ?)",
+      like, like, exclude_id, exclude_id, exclude_id)
       .order(:username).limit(limit).to_a
   end
 

@@ -110,7 +110,7 @@ module Api
       convo = owned_group
       return if convo.nil?
       friend_ids = Friendship.friend_ids(me.uid).to_set
-      ids = id_list_param("user_ids").select { |i| friend_ids.includes?(i) && !convo.member?(i) }
+      ids = id_list_param("user_ids").select { |i| friend_ids.includes?(i) && !convo.member?(i) && !Moderation.banned?(convo.cid, i) }
       if convo.member_count + ids.size > MAX_GROUP_MEMBERS
         render_errors(["Grupo pode ter no máximo #{MAX_GROUP_MEMBERS} membros"])
         return
