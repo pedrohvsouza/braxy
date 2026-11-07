@@ -41,6 +41,9 @@ test("logout returns to the auth card", async ({ page }) => {
 });
 
 test("forgot password asks for the email and answers the same for any address", async ({ page }) => {
+  // The request is rate limited per address (5 per 15 min); the API itself is
+  // covered by the backend spec, so the UI gets a canned answer here.
+  await page.route("**/api/password_resets", (route) => route.fulfill({ json: { ok: true } }));
   await page.goto("/");
   await page.getByRole("button", { name: "Esqueceu sua senha?" }).click();
   const form = page.getByTestId("forgot-form");
