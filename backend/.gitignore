@@ -8,6 +8,7 @@
 !/bin/ci
 !/bin/docker-entrypoint
 !/bin/doctor
+!/bin/multi
 /tmp/*
 !/tmp/.gitkeep
 !/tmp/pids/

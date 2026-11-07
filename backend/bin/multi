@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Runs WEB_CONCURRENCY copies of a single-threaded Braxy binary on the same
+# port (SO_REUSEPORT: the kernel spreads connections across them). Redis
+# carries Cable fan-out, presence, stats and rate limits between processes;
+# sessions are signed cookies, so any process can serve any request.
+#
+#   WEB_CONCURRENCY=4 bin/multi ./tmp/bench-backend-st
+# If any process exits, the others are stopped and the script exits with
+# its status, so the container restarts as a unit.
+set -u
+bin=${1:?usage: bin/multi BINARY}
+n=${WEB_CONCURRENCY:-$(nproc)}
+export SACI_REUSE_PORT=1
+
+pids=""
+trap 'kill $pids 2>/dev/null; wait' INT TERM
+i=0
+while [ "$i" -lt "$n" ]; do
+  "$bin" &
+  pids="$pids $!"
+  i=$((i + 1))
+done
+echo "[braxy] started $n processes:$pids"
+
+wait -n
+status=$?
+echo "[braxy] a process exited ($status); stopping the rest"
+kill $pids 2>/dev/null
+wait
+exit "$status"
