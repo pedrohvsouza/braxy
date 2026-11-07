@@ -17,6 +17,27 @@ describe ChatChannel do
     end
   end
 
+  it "accepts the page's own address as origin (another device on the network)" do
+    with_app do |app|
+      bob = Fixtures.user("bob")
+      browser = Fixtures.browser(app, bob)
+      same = browser.cable(HTTP::Headers{"Origin" => "http://#{browser.host}:#{browser.port}"})
+      same.subscribe("ChatChannel").should contain("ChatChannel")
+      same.close
+    end
+  end
+
+  it "matches origins against the Host header" do
+    braxy_origin_allowed?("http://192.168.0.10:5173", "192.168.0.10:5173").should be_true
+    braxy_origin_allowed?("http://Notebook.Local:5173", "notebook.local:5173").should be_true
+    braxy_origin_allowed?("http://192.168.0.10", "192.168.0.10").should be_true
+    braxy_origin_allowed?("http://localhost:5173", nil).should be_true # APP_ORIGINS
+    braxy_origin_allowed?("http://evil.test", "192.168.0.10:5173").should be_false
+    braxy_origin_allowed?("http://192.168.0.10:6666", "192.168.0.10:5173").should be_false
+    braxy_origin_allowed?("file://192.168.0.10:5173", "192.168.0.10:5173").should be_false
+    braxy_origin_allowed?("null", "192.168.0.10:5173").should be_false
+  end
+
   it "streams new messages, reactions and typing to members" do
     with_app do |app|
       bob = Fixtures.user("bob")
