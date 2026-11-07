@@ -37,6 +37,7 @@ module BraxyRoutes
       r.get "/api/conversations/:id", Api::ConversationsController, :show
       r.patch "/api/conversations/:id", Api::ConversationsController, :update
       r.post "/api/conversations/:id/avatar", Api::ConversationsController, :avatar
+      r.get "/api/conversations/:id/members", Api::ConversationsController, :members
       r.post "/api/conversations/:id/members", Api::ConversationsController, :add_members
       r.delete "/api/conversations/:id/members/:user_id", Api::ConversationsController, :remove_member
       r.post "/api/conversations/:id/read", Api::ConversationsController, :read

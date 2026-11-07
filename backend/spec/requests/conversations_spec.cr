@@ -115,4 +115,31 @@ describe "conversations API" do
       bb.json("/api/sidebar")["friends"][0]["unread"].as_i.should eq(0)
     end
   end
+
+  it "pages and searches members in join order, only for members" do
+    with_app do |app|
+      bob = Fixtures.user("bob")
+      ana = Fixtures.user("ana")
+      cid = Fixtures.user("cid")
+      dan = Fixtures.user("dan")
+      eve = Fixtures.user("eve")
+      g = Fixtures.group(bob, "Turma", [ana, cid, dan])
+      bb = Fixtures.browser(app, bob)
+
+      first = bb.json("/api/conversations/#{g.cid}/members?limit=2")
+      first["members"].as_a.map(&.["user"]["username"].as_s).should eq(["bob", "ana"])
+      first["members"][0]["role"].as_s.should eq("owner")
+      cursor = first["next_cursor"].as_i64
+
+      rest = bb.json("/api/conversations/#{g.cid}/members?limit=2&cursor=#{cursor}")
+      rest["members"].as_a.map(&.["user"]["username"].as_s).should eq(["cid", "dan"])
+      rest["next_cursor"].raw.should be_nil
+
+      found = bb.json("/api/conversations/#{g.cid}/members?q=%40AN")
+      found["members"].as_a.map(&.["user"]["username"].as_s).should eq(["ana", "dan"])
+      bb.json("/api/conversations/#{g.cid}/members?q=%25")["members"].as_a.should be_empty
+
+      Fixtures.browser(app, eve).get("/api/conversations/#{g.cid}/members").status_code.should eq(404)
+    end
+  end
 end
