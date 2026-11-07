@@ -46,4 +46,28 @@ describe MessagePageCache do
     gate.send(nil)
     waiter.receive.should eq("own")
   end
+
+  it "mirrors versions locally: bumps, announcements and seeding" do
+    MessagePageCache.clear!
+    KV.reset!
+    MessagePageCache.version(5_i64).should eq("0")
+    MessagePageCache.bump(5_i64)
+    MessagePageCache.version(5_i64).should eq("1")
+
+    # Another process bumped twice: only the announcement tells us.
+    KV.backend.incr(MessagePageCache.version_key(5_i64), 2)
+    MessagePageCache.version(5_i64).should eq("1")
+    MessagePageCache.observe_announcement("5=3,9=4")
+    MessagePageCache.version(5_i64).should eq("3")
+    MessagePageCache.observe_announcement("5=2") # late, out of order
+    MessagePageCache.version(5_i64).should eq("3")
+
+    # Unknown conversations are read from the store, known ones are not.
+    KV.backend.incr(MessagePageCache.version_key(11_i64), 7)
+    MessagePageCache.versions([5_i64, 9_i64, 11_i64]).should eq(["3", "4", "7"])
+
+    # After the mirror is forgotten (resubscribe), the store is the truth.
+    MessagePageCache.forget_versions!
+    MessagePageCache.versions([5_i64, 9_i64]).should eq(["3", "0"])
+  end
 end

@@ -33,7 +33,7 @@ module SidebarCache
 
   def self.fetch(user_id : Int64, &build : -> String) : String
     convs = Access.conversation_ids(user_id)
-    versions = KV.backend.mget(convs.map { |cid| MessagePageCache.version_key(cid) })
+    versions = MessagePageCache.versions(convs)
     now = Time.instant
     gen = generation(user_id)
     if (hit = @@mutex.synchronize { @@entries[user_id]? }) && hit[0] == versions

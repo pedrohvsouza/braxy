@@ -6,7 +6,8 @@
 # keep long TTLs without serving stale authorization data (e.g. a member
 # removed from a group loses access everywhere at once).
 #
-# Messages: "user:<id>", "conv:<id>", "member:<cid>:<uid>", "friends:<a>:<b>".
+# Messages: "user:<id>", "conv:<id>", "member:<cid>:<uid>", "friends:<a>:<b>",
+# "vers:<cid>=<n>,..." (conversation versions, see MessagePageCache).
 module Invalidation
   CHANNEL = "braxy:invalidate"
 
@@ -32,6 +33,10 @@ module Invalidation
         begin
           conn = Saci::Cable::RedisWire::Conn.new(info, subscriber: true)
           conn.subscribe(CHANNEL, -> {
+            # Announcements published before this subscription took effect
+            # were missed: forget the mirrored versions (from the very
+            # first subscribe too, since reads may already have seeded it).
+            MessagePageCache.forget_versions!
             clear_all unless first
             first = false
             nil
@@ -47,7 +52,7 @@ module Invalidation
   def self.apply(key : String) : Nil
     parts = key.split(":")
     case parts[0]?
-    when "user"    then UserCache.invalidate(parts[1]?.try(&.to_i64?))
+    when "user" then UserCache.invalidate(parts[1]?.try(&.to_i64?))
     when "conv"
       parts[1]?.try(&.to_i64?).try { |id| Access.invalidate_conversation(id) }
       SidebarCache.clear! # names/avatars show in many sidebars; renames are rare
@@ -62,6 +67,8 @@ module Invalidation
         SidebarCache.invalidate(a)
         SidebarCache.invalidate(b)
       end
+    when "vers"
+      parts[1]?.try { |payload| MessagePageCache.observe_announcement(payload) }
     when "sidebar"
       parts[1]?.try(&.to_i64?).try { |id| SidebarCache.invalidate(id) }
     end

@@ -13,9 +13,14 @@ module KV
     # Sets keys[1] = value and keys[0] = json when id >= the id stored in
     # keys[1] (or none is stored): a monotonic "latest" register.
     abstract def set_if_newer(id_key : String, value_key : String, id : Int64, value : String) : Nil
-    # set_if_newer for every entry {id_key, value_key, id, value}, then INCR
-    # of every key in `bumps`, in that order and in one round trip.
-    abstract def set_if_newer_and_incr(entries : Array({String, String, Int64, String}), bumps : Array(String)) : Nil
+    # set_if_newer for every entry {id_key, value_key, id, value}, then
+    # `bump_versions(bumps)`, in that order and in one round trip.
+    abstract def set_if_newer_and_bump(entries : Array({String, String, Int64, String}), bumps : Array({String, Int64}), channel : String) : Array(Int64)
+    # INCRs each version key of `bumps` ({key, id}) and announces the new
+    # values on `channel` as "vers:<id>=<n>,<id>=<n>" (atomically, so a
+    # subscriber never sees a version Redis does not hold yet). Returns the
+    # new values in order.
+    abstract def bump_versions(bumps : Array({String, Int64}), channel : String) : Array(Int64)
     abstract def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
     abstract def del(key : String) : Nil
     abstract def getdel(key : String) : String?
@@ -67,17 +72,39 @@ module KV
       call(["EVAL", SET_IF_NEWER, "2", id_key, value_key, id.to_s, value])
     end
 
-    def set_if_newer_and_incr(entries : Array({String, String, Int64, String}), bumps : Array(String)) : Nil
+    BUMP_VERSIONS = "local out, msg = {}, {} " \
+                    "for i, k in ipairs(KEYS) do local v = redis.call('INCR', k) out[i] = v msg[i] = ARGV[i + 1] .. '=' .. v end " \
+                    "redis.call('PUBLISH', ARGV[1], 'vers:' .. table.concat(msg, ',')) return out"
+
+    private def bump_command(bumps : Array({String, Int64}), channel : String) : Array(String)
+      cmd = ["EVAL", BUMP_VERSIONS, bumps.size.to_s]
+      bumps.each { |(k, _)| cmd << k }
+      cmd << channel
+      bumps.each { |(_, id)| cmd << id.to_s }
+      cmd
+    end
+
+    private def versions_from(reply : Saci::Cable::RedisWire::RedisValue) : Array(Int64)
+      reply.as(Array).map(&.as(Int64))
+    end
+
+    def set_if_newer_and_bump(entries : Array({String, String, Int64, String}), bumps : Array({String, Int64}), channel : String) : Array(Int64)
       cmds = [] of Array(String)
       entries.each { |(ik, vk, id, v)| cmds << ["EVAL", SET_IF_NEWER, "2", ik, vk, id.to_s, v] }
-      bumps.each { |k| cmds << ["INCR", k] }
-      return if cmds.empty?
+      cmds << bump_command(bumps, channel) unless bumps.empty?
+      return [] of Int64 if cmds.empty?
       conn = @pool.receive
-      begin
+      replies = begin
         conn.call_pipeline(cmds)
       ensure
         @pool.send(conn)
       end
+      bumps.empty? ? [] of Int64 : versions_from(replies.last)
+    end
+
+    def bump_versions(bumps : Array({String, Int64}), channel : String) : Array(Int64)
+      return [] of Int64 if bumps.empty?
+      versions_from(call(bump_command(bumps, channel)))
     end
 
     def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
@@ -159,9 +186,14 @@ module KV
       end
     end
 
-    def set_if_newer_and_incr(entries : Array({String, String, Int64, String}), bumps : Array(String)) : Nil
+    def set_if_newer_and_bump(entries : Array({String, String, Int64, String}), bumps : Array({String, Int64}), channel : String) : Array(Int64)
       entries.each { |(ik, vk, id, v)| set_if_newer(ik, vk, id, v) }
-      bumps.each { |k| incr(k) }
+      bump_versions(bumps, channel)
+    end
+
+    # One process: nobody else to announce to.
+    def bump_versions(bumps : Array({String, Int64}), channel : String) : Array(Int64)
+      bumps.map { |(k, _)| incr(k) }
     end
 
     def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool

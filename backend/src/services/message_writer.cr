@@ -96,7 +96,9 @@ module MessageWriter
           {ConversationPreview.id_key(cid), ConversationPreview.key(cid), job.message.mid,
            ConversationPreview.json_for(job.message, job.author_name)}
         end
-        KV.backend.set_if_newer_and_incr(entries, newest.keys.map { |cid| MessagePageCache.version_key(cid) })
+        cids = newest.keys
+        bumped = KV.backend.set_if_newer_and_bump(entries, cids.map { |cid| {MessagePageCache.version_key(cid), cid} }, Invalidation::CHANNEL)
+        cids.each_with_index { |cid, i| bumped[i]?.try { |v| MessagePageCache.observe(cid, v) } }
       rescue ex
         failure = ex
       end
