@@ -29,6 +29,8 @@ module Api
       response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
       response.headers["X-Content-Type-Options"] = "nosniff"
       response.headers["Content-Disposition"] = "inline"
+      # Opened directly (new tab), an image must never run as a document.
+      response.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
       render body: String.new(bytes), status: 200, content_type: Uploads.mime_for(key)
     end
   end
