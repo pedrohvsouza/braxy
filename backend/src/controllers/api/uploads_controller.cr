@@ -1,6 +1,6 @@
 module Api
   # POST /api/uploads   multipart `file` (image, ≤ 10 MB) -> 201 {key, url}
-  # GET  /api/files/:key                                   -> image bytes (logged-in only)
+  # GET  /api/files/:key                                   -> image bytes (see Uploads.visible_to?)
   class UploadsController < ::ApplicationController
     before_action :require_login
     rate_limit to: 20, within: 1.minute, only: [:create]
@@ -11,7 +11,7 @@ module Api
         render_errors(["Envie uma imagem"])
         return
       end
-      key = Uploads.store_image(file.bytes)
+      key = Uploads.store_image(file.bytes, me.uid, Uploads::MESSAGE)
       render json: {key: key, url: "/api/files/#{key}"}, status: :created
     rescue ex : Uploads::Invalid
       render_errors([ex.message.to_s])
@@ -19,7 +19,8 @@ module Api
 
     def show
       key = params["key"]? || ""
-      bytes = Uploads.fetch(key)
+      # Not found rather than forbidden: a key's existence stays private.
+      bytes = Uploads.visible_to?(key, me.uid) ? Uploads.fetch(key) : nil
       if bytes.nil?
         head :not_found
         return
@@ -28,6 +29,8 @@ module Api
       response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
       response.headers["X-Content-Type-Options"] = "nosniff"
       response.headers["Content-Disposition"] = "inline"
+      # Opened directly (new tab), an image must never run as a document.
+      response.headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
       render body: String.new(bytes), status: 200, content_type: Uploads.mime_for(key)
     end
   end

@@ -133,6 +133,7 @@ def with_app(&)
   Access.clear!
   MessagePageCache.clear!
   SidebarCache.clear!
+  Uploads.clear_cache!
   Xp.reset_memo!
   Saci::TestSession.serve(BraxyRoutes.build) { |app| yield app }
 end

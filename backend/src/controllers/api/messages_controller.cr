@@ -6,8 +6,22 @@ module Api
   # POST   /api/messages/:id/reactions {emoji}   (toggle)
   class MessagesController < ::ApplicationController
     before_action :require_login
-    rate_limit to: 30, within: 10.seconds, only: [:create], name: :burst
-    rate_limit to: 60, within: 10.seconds, only: [:react], name: :reactions
+    before_action :limit_posts, only: [:create]
+    before_action :limit_reactions, only: [:react]
+
+    POST_BURST     = {30, 10.seconds}
+    POST_SUSTAINED = {120, 1.minute}
+    REACTIONS      = {60, 10.seconds}
+
+    private def limit_posts : Nil
+      error = "Muitas mensagens em pouco tempo. Espere um pouco e tente de novo."
+      limit_per_user("burst", *POST_BURST, error)
+      limit_per_user("sustained", *POST_SUSTAINED, error)
+    end
+
+    private def limit_reactions : Nil
+      limit_per_user("reactions", *REACTIONS, "Muitas reações em pouco tempo. Espere um pouco.")
+    end
 
     def index
       convo = member_conversation
@@ -51,7 +65,12 @@ module Api
           return
         end
       end
-      message, created = Messaging.post(me, convo, str_param("body"), str_param("image_key"),
+      image_key = str_param("image_key").try(&.presence)
+      if image_key && !Uploads.attach(image_key, me.uid, convo.cid)
+        render_errors(["imagem inválida"])
+        return
+      end
+      message, created = Messaging.post(me, convo, str_param("body"), image_key,
         id_param("reply_to_id"), str_param("client_id"))
       if wire = message.wire
         render body: %({"message":#{wire}}), content_type: "application/json", status: created ? 201 : 200
