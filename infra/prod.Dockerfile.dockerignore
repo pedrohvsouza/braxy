@@ -1,0 +1,19 @@
+# Build context for infra/prod.Dockerfile (BuildKit reads this file instead
+# of a root .dockerignore, so the dev build is unaffected).
+**/node_modules
+**/.git
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+backend/lib
+backend/tmp
+backend/log
+backend/storage
+backend/.crystal
+backend/.shards
+backend/bin/backend
+backend/bin/saci-*
+bench
+docs
+.claude
+.github

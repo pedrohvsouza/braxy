@@ -1,0 +1,67 @@
+# Braxy edge: TLS (automatic HTTPS for BRAXY_DOMAIN), the static SPA and a
+# reverse proxy to the backend processes.
+#
+#   BRAXY_DOMAIN   public host name (e.g. chat.example.com); ":80" disables
+#                  TLS for local tests behind another proxy
+#   ACME_EMAIL     contact for Let's Encrypt
+#   BACKEND_ADDR   backend host:port (default backend:3000)
+{
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$BRAXY_DOMAIN:localhost} {
+	encode zstd gzip
+
+	@backend path /api/* /cable /cable/* /up
+	handle @backend {
+		# Uploads go up to 10 MB (backend limit: 12 MB).
+		request_body {
+			max_size 12MB
+		}
+		reverse_proxy {$BACKEND_ADDR:backend:3000} {
+			# Several processes behind one address: retry a connection
+			# refused during a rolling restart.
+			lb_try_duration 5s
+			# The rate limits key on the first X-Forwarded-For value, so it is
+			# overwritten with the real peer address, never appended to.
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			health_uri /up
+			health_interval 10s
+		}
+	}
+
+	handle {
+		root * /srv/braxy
+		# Hashed bundles never change; index.html must always revalidate.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@document not path /assets/*
+		header @document Cache-Control "no-cache"
+		# The SPA document carries its CSP as a <meta> tag (frontend/csp.ts,
+		# B6), but <meta> cannot express frame-ancestors: the anti-framing
+		# and other document headers come from whoever serves index.html.
+		header {
+			X-Frame-Options "DENY"
+			X-Content-Type-Options "nosniff"
+			Referrer-Policy "strict-origin-when-cross-origin"
+			Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+		}
+		try_files {path} /index.html
+		file_server
+	}
+
+	# API responses get their security headers from the app (B6); only the
+	# static files above get them here. HSTS is set for everything because
+	# only the edge knows it is TLS.
+	header {
+		defer
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
