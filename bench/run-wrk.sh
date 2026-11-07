@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 slug=$1; cmd=$2; levels=${3:-"16 64 256 512 1024"}; dur=${4:-10s}
-export COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml
+export COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml COMPOSE_PROJECT_NAME=braxy-bench
 docker compose exec -T pg psql -q -U braxy -d braxy_development < bench/reset.sql >/dev/null
 BENCH_CMD="$cmd" SACI_MT="${SACI_MT:-0}" docker compose up -d --force-recreate backend >/dev/null 2>&1
 docker compose exec -T redis redis-cli FLUSHDB >/dev/null

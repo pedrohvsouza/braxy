@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 slug=$1; cmd=$2; mt=${3:-0}
 # WS_ONLY=1 skips the HTTP sweep; WS_STEPS overrides the ramp steps.
 steps_arg=${WS_STEPS:+--steps $WS_STEPS}
-export COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml
+export COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml COMPOSE_PROJECT_NAME=braxy-bench
 
 restart() {
   BENCH_CMD="$cmd" SACI_MT="$mt" docker compose up -d --force-recreate backend >/dev/null 2>&1
@@ -32,4 +32,4 @@ restart
 ./bench/stats.sh "bench/results/ws-$slug-stats.csv" & sp=$!
 docker compose exec -T loadgen node ws.mjs --procs 10 $steps_arg > "bench/results/ws-$slug.txt" 2>&1 || true
 kill $sp
-docker inspect braxy-backend-1 --format "[$slug] backend running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}"
+docker inspect braxy-bench-backend-1 --format "[$slug] backend running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}"

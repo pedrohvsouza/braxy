@@ -1,28 +1,41 @@
 # Benchmark do Braxy
 
 Mede quantas requisições por segundo e quantos usuários simultâneos o Braxy
-aguenta com recursos fixos: **backend + Postgres + Redis nos núcleos 0–3, com
-2 GB no total** (backend 1 GB, Postgres 768 MB, Redis 256 MB). O gerador de
-carga roda num container separado nos núcleos 4–15, dentro da rede do compose
-(sem passar pelo docker-proxy).
+aguenta com recursos fixos: **backend + Postgres + Redis nos núcleos 0–3**
+(backend 1.664 MiB, Postgres 1 GiB, Redis 64 MiB). O gerador de carga roda num
+container separado nos núcleos 4–15, dentro da rede do compose (sem passar
+pelo docker-proxy).
 
-## Preparar
+O bench é um projeto compose à parte (`braxy-bench`): containers, volumes e
+banco próprios e nenhuma porta publicada. Ele roda junto com o ambiente de
+desenvolvimento (`make up`) sem tocar nele nem nos seus dados (o
+`bench/reset.sql` apaga as mensagens antes de cada rodada, só no banco do
+bench). Com o dev rodando ao mesmo tempo, os números absolutos caem um pouco:
+os dois dividem a máquina.
+
+## Preparar (uma vez)
 
 ```sh
+export COMPOSE_PROJECT_NAME=braxy-bench
 export COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml
 
 # 1. Infra + gerador de carga (o frontend fica de fora).
 docker compose up -d pg redis s3 loadgen
 
-# 2. Usuários de teste: bench_00001..bench_20000 (senha password123, bcrypt
-#    custo 4), todos no lobby, e 400 salas de 50 membros. Idempotente.
+# 2. Schema e seed do app. O compilador precisa de mais de 1 GB, então os
+#    comandos que compilam rodam SEM o override de limites.
+COMPOSE_FILE=docker-compose.yml docker compose run --rm --no-deps backend \
+  sh -c 'shards install && saci db:migrate && saci db:seed'
+docker compose exec -T pg psql -U braxy -d braxy_development \
+  -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"
+
+# 3. Usuários de teste: bench_00001..bench_60000 (senha password123, bcrypt
+#    custo 4), todos no lobby, e 1.200 salas de 50 membros. Idempotente.
 docker compose exec -T pg psql -U braxy -d braxy_development < bench/seed.sql
 
-# 3. Binários release. O compilador precisa de mais de 1 GB, então o build
-#    roda SEM o override de limites.
+# 4. Binário release.
 COMPOSE_FILE=docker-compose.yml docker compose run --rm --no-deps backend \
   sh -c 'crystal build --release src/backend.cr -o tmp/bench-backend-st2'
-# multithread (preview): acrescente -Dexecution_context e rode com SACI_MT=1
 ```
 
 ## Rodar

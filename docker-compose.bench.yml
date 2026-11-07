@@ -3,20 +3,29 @@
 # postgres 1 GiB, redis 64 MiB); the load generator
 # runs on the remaining cores, inside the compose network (no docker-proxy).
 #
-#   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d pg redis s3 backend loadgen
-#   docker compose -f docker-compose.yml -f docker-compose.bench.yml exec loadgen node http.mjs
+# It runs as its own compose project (braxy-bench): separate containers,
+# volumes and database, and no published ports, so a benchmark never touches
+# the development stack (`make up`) or its data. The bench scripts set
+#   COMPOSE_PROJECT_NAME=braxy-bench COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml
+# (see bench/README.md for the one-time setup).
 services:
   pg:
+    ports: !reset []
     cpuset: "0-3"
     mem_limit: 1024m
     shm_size: 320m
     command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "effective_cache_size=640MB", "-c", "work_mem=4MB", "-c", "synchronous_commit=on", "-c", "wal_buffers=32MB", "-c", "max_wal_size=4GB", "-c", "checkpoint_timeout=15min", "-c", "commit_delay=100", "-c", "commit_siblings=3", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
 
   redis:
+    ports: !reset []
     cpuset: "0-3"
     mem_limit: 64m
 
+  s3:
+    ports: !reset []
+
   backend:
+    ports: !reset []
     cpuset: "0-3"
     mem_limit: 1664m
     memswap_limit: 1664m
