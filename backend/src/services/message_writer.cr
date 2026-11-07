@@ -61,6 +61,7 @@ module MessageWriter
   end
 
   private def self.run_writer : Nil
+    last_size = 1
     loop do
       batch = [@@queue.receive]
       deadline = Time.instant + LINGER
@@ -69,10 +70,11 @@ module MessageWriter
         when job = @@queue.receive
           batch << job
         else
-          # A lone post with nothing else queued goes out at once: waiting
-          # for company only pays off once posts are arriving together
-          # (and under load they queue up during the previous write anyway).
-          break if batch.size == 1 || batch.size >= MIN_FILL || Saci.env == "test"
+          # A lone post, after a batch that was also alone, goes out at
+          # once: posts are not arriving together, so waiting for company
+          # would only add latency. As soon as they do, the writer lingers
+          # again (fewer, fuller commits).
+          break if (batch.size == 1 && last_size == 1) || batch.size >= MIN_FILL || Saci.env == "test"
           remaining = deadline - Time.instant
           break if remaining <= Time::Span.zero
           select
@@ -83,6 +85,7 @@ module MessageWriter
           end
         end
       end
+      last_size = batch.size
       failure = nil.as(Exception?)
       begin
         write_batch(batch)
