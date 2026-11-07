@@ -22,6 +22,10 @@ module MessageWriter
   MIN_FILL = 64
   IDLE_GAP = 200.microseconds
   LINGER   = 1.millisecond
+  # Writer fibers draining the queue: while one batch waits on Postgres the
+  # next one is already collecting (batches of different processes run
+  # concurrently anyway, so this adds no new ordering case).
+  WRITERS = (ENV["MESSAGE_WRITERS"]? || "1").to_i
 
   class Job
     getter message : Message
@@ -53,48 +57,51 @@ module MessageWriter
 
   def self.start : Nil
     return if @@started.swap(true)
-    spawn(name: "braxy-message-writer") do
-      loop do
-        batch = [@@queue.receive]
-        deadline = Time.instant + LINGER
-        while batch.size < MAX_BATCH
+    (Saci.env == "test" ? 1 : WRITERS).times { |i| spawn(name: "braxy-message-writer-#{i}") { run_writer } }
+  end
+
+  private def self.run_writer : Nil
+    loop do
+      batch = [@@queue.receive]
+      deadline = Time.instant + LINGER
+      while batch.size < MAX_BATCH
+        select
+        when job = @@queue.receive
+          batch << job
+        else
+          break if batch.size >= MIN_FILL || Saci.env == "test"
+          remaining = deadline - Time.instant
+          break if remaining <= Time::Span.zero
           select
           when job = @@queue.receive
             batch << job
-          else
-            break if batch.size >= MIN_FILL || Saci.env == "test"
-            remaining = deadline - Time.instant
-            break if remaining <= Time::Span.zero
-            select
-            when job = @@queue.receive
-              batch << job
-            when timeout({remaining, IDLE_GAP}.min)
-              break
-            end
+          when timeout({remaining, IDLE_GAP}.min)
+            break
           end
         end
-        failure = nil.as(Exception?)
-        begin
-          write_batch(batch)
-          # Per conversation in this batch: refresh the sidebar preview with
-          # its newest message, then bump the cache version (in that order,
-          # so a reader that sees the new version also sees the preview).
-          newest = {} of Int64 => Job
-          batch.each do |job|
-            next unless job.created
-            cid = job.message.conversation_id.not_nil!
-            newest[cid] = job if (prev = newest[cid]?).nil? || prev.message.mid < job.message.mid
-          end
-          newest.each do |cid, job|
-            ConversationPreview.store(job.message, job.author_name)
-            MessagePageCache.bump(cid)
-          end
-        rescue ex
-          failure = ex
-        end
-        Bookkeeping.flush if Saci.env == "test" # specs see it immediately
-        batch.each { |job| job.done.send(failure) }
       end
+      failure = nil.as(Exception?)
+      begin
+        write_batch(batch)
+        # Per conversation in this batch: refresh the sidebar preview with
+        # its newest message, then bump the cache version (in that order,
+        # so a reader that sees the new version also sees the preview).
+        newest = {} of Int64 => Job
+        batch.each do |job|
+          next unless job.created
+          cid = job.message.conversation_id.not_nil!
+          newest[cid] = job if (prev = newest[cid]?).nil? || prev.message.mid < job.message.mid
+        end
+        entries = newest.map do |cid, job|
+          {ConversationPreview.id_key(cid), ConversationPreview.key(cid), job.message.mid,
+           ConversationPreview.json_for(job.message, job.author_name)}
+        end
+        KV.backend.set_if_newer_and_incr(entries, newest.keys.map { |cid| MessagePageCache.version_key(cid) })
+      rescue ex
+        failure = ex
+      end
+      Bookkeeping.flush if Saci.env == "test" # specs see it immediately
+      batch.each { |job| job.done.send(failure) }
     end
   end
 
@@ -103,22 +110,39 @@ module MessageWriter
     ([row] * rows).join(", ")
   end
 
+  # The whole batch is ONE statement in autocommit: the message INSERT and,
+  # through data-modifying CTEs, the XP events and user totals for the rows
+  # that were really inserted. One round trip instead of BEGIN / INSERT /
+  # INSERT / UPDATE / COMMIT, so the connection never sits "idle in
+  # transaction" while this fiber waits for its turn on the scheduler.
   private def self.write_batch(batch : Array(Job)) : Nil
     now = Time.utc
-    db = Saci::Record.connection.as(DB::Database)
-    db.transaction do |tx|
-      conn = tx.connection
-
-      # 1. Insert (duplicates by client_id are skipped and resolved below).
-      args = [] of Saci::Record::Value
-      batch.each do |job|
-        m = job.message
-        args.push(m.conversation_id, m.author_id, m.body, m.image_key, m.reply_to_id, m.client_id, now, now)
+    args = [] of Saci::Record::Value
+    batch.each do |job|
+      m = job.message
+      args.push(m.conversation_id, m.author_id, m.body, m.image_key, m.reply_to_id, m.client_id, now, now)
+    end
+    paying = batch.select { |job| job.xp > 0 }
+    sql = String.build do |io|
+      io << "WITH ins AS (INSERT INTO messages (conversation_id, author_id, body, image_key, reply_to_id, client_id, created_at, updated_at) "
+      io << "VALUES " << placeholders(batch.size, 8)
+      io << " ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id, client_id, created_at)"
+      unless paying.empty?
+        paying.each { |job| args.push(job.message.author_id, job.message.client_id, job.xp.to_i64) }
+        io << ", xp(uid, cid, amt) AS (VALUES " << placeholders(paying.size, 3) << ")"
+        io << ", xpe AS (INSERT INTO xp_events (user_id, kind, amount, source_key, created_at, updated_at) "
+        io << "SELECT ins.author_id, 'message', xp.amt::bigint, 'message:' || ins.id, ins.created_at, ins.created_at "
+        io << "FROM xp JOIN ins ON ins.author_id = xp.uid::bigint AND ins.client_id = xp.cid::text "
+        io << "ON CONFLICT (user_id, kind, source_key) DO NOTHING RETURNING user_id, amount)"
+        io << ", upd AS (UPDATE users AS u SET xp = u.xp + t.amt FROM "
+        io << "(SELECT user_id, sum(amount)::bigint AS amt FROM xpe GROUP BY user_id) AS t WHERE u.id = t.user_id)"
       end
-      inserted = {} of {Int64, String} => {Int64, Time}
-      sql = "INSERT INTO messages (conversation_id, author_id, body, image_key, reply_to_id, client_id, created_at, updated_at) " \
-            "VALUES #{placeholders(batch.size, 8)} " \
-            "ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id, client_id, created_at"
+      io << " SELECT id, author_id, client_id, created_at FROM ins"
+    end
+
+    inserted = {} of {Int64, String} => {Int64, Time}
+    db = Saci::Record.connection.as(DB::Database)
+    db.using_connection do |conn|
       Saci::Record.query_compat(conn, sql, args) do |rs|
         rs.each do
           id = rs.read(Int64)
@@ -128,58 +152,32 @@ module MessageWriter
           inserted[{author, client}] = {id, at}
         end
       end
+    end
 
-      fresh = [] of Job
-      batch.each do |job|
-        m = job.message
-        if row = inserted[{m.author_id.not_nil!, m.client_id.not_nil!}]?
-          m.id = row[0]
-          m.created_at = row[1]
-          m.updated_at = row[1]
-          m.__saci_mark_persisted! # as if loaded: later update_columns work
-          fresh << job
-        else
-          job.created = false
-          if existing = Message.find_by(author_id: m.author_id, client_id: m.client_id)
-            m.id = existing.id
-            m.created_at = existing.created_at
-            m.body = existing.body
-            m.image_key = existing.image_key
-            m.reply_to_id = existing.reply_to_id
-            m.__saci_mark_persisted!
-          end
+    batch.each do |job|
+      m = job.message
+      if row = inserted[{m.author_id.not_nil!, m.client_id.not_nil!}]?
+        m.id = row[0]
+        m.created_at = row[1]
+        m.updated_at = row[1]
+        m.__saci_mark_persisted! # as if loaded: later update_columns work
+        job.xp_paid = job.xp > 0
+        # Conversation "last message" bookkeeping is not written here: it is
+        # a hot row per conversation, and updating it from concurrent batches
+        # on several processes deadlocked. `Bookkeeping` coalesces it. The
+        # author's own read cursor needs no update (unread counts ignore
+        # one's own messages).
+        Bookkeeping.note(m)
+      else
+        job.created = false
+        if existing = Message.find_by(author_id: m.author_id, client_id: m.client_id)
+          m.id = existing.id
+          m.created_at = existing.created_at
+          m.body = existing.body
+          m.image_key = existing.image_key
+          m.reply_to_id = existing.reply_to_id
+          m.__saci_mark_persisted!
         end
-      end
-      next if fresh.empty?
-
-      # Conversation "last message" bookkeeping is not written here: it is a
-      # hot row per conversation, and updating it from concurrent batches on
-      # several processes deadlocked. `Bookkeeping` coalesces it instead.
-      # The author's own read cursor needs no update at all (unread counts
-      # ignore one's own messages).
-      fresh.each { |job| Bookkeeping.note(job.message) }
-
-      # 4. Message XP (cooldown already claimed in Redis by the caller).
-      paying = fresh.select { |job| job.xp > 0 }
-      unless paying.empty?
-        xargs = [] of Saci::Record::Value
-        paying.each { |job| xargs.push(job.message.author_id, "message", job.xp.to_i64, "message:#{job.message.mid}", now, now) }
-        Saci::Record.exec_compat(conn,
-          "INSERT INTO xp_events (user_id, kind, amount, source_key, created_at, updated_at) VALUES #{placeholders(paying.size, 6)} " \
-          "ON CONFLICT (user_id, kind, source_key) DO NOTHING",
-          xargs)
-        totals = {} of Int64 => Int64
-        paying.each do |job|
-          uid = job.message.author_id.not_nil!
-          totals[uid] = (totals[uid]? || 0_i64) + job.xp
-          job.xp_paid = true
-        end
-        uargs = [] of Saci::Record::Value
-        totals.each { |uid, amt| uargs.push(uid, amt) }
-        Saci::Record.exec_compat(conn,
-          "UPDATE users AS u SET xp = u.xp + v.amt::bigint FROM (VALUES #{placeholders(totals.size, 2)}) AS v(uid, amt) " \
-          "WHERE u.id = v.uid::bigint",
-          uargs)
       end
     end
   end
@@ -238,17 +236,22 @@ module Bookkeeping
       p
     end
     return if pending.empty?
-    db = Saci::Record.connection.as(DB::Database)
-    db.transaction do |tx|
-      conn = tx.connection
-      conn.exec("SET LOCAL synchronous_commit TO OFF")
-      pending.keys.sort.each do |cid|
-        mid, at = pending[cid]
-        Saci::Record.exec_compat(conn,
-          "UPDATE conversations SET last_message_id = ?, last_message_at = ? " \
-          "WHERE id = ? AND (last_message_id IS NULL OR last_message_id < ?)",
-          [mid, at, cid, mid] of Saci::Record::Value)
-      end
+    # One statement: the CTE locks the rows in ascending id order (every
+    # process locks in the same order, so no deadlock cycle can form) and
+    # the UPDATE only moves last_message_id forward.
+    args = [] of Saci::Record::Value
+    cids = pending.keys.sort
+    cids.each do |cid|
+      mid, at = pending[cid]
+      args.push(cid, mid, at)
     end
+    rows = (["(?::bigint, ?::bigint, ?::timestamp)"] * cids.size).join(", ")
+    Saci::Record.exec_compat(Saci::Record.connection.as(DB::Database),
+      "WITH v(cid, mid, at) AS (VALUES #{rows}), " \
+      "locked AS (SELECT c.id FROM conversations c JOIN v ON v.cid = c.id ORDER BY c.id FOR UPDATE) " \
+      "UPDATE conversations c SET last_message_id = v.mid, last_message_at = v.at " \
+      "FROM v, locked WHERE c.id = v.cid AND locked.id = c.id " \
+      "AND (c.last_message_id IS NULL OR c.last_message_id < v.mid)",
+      args)
   end
 end

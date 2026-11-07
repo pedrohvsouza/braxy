@@ -13,6 +13,9 @@ module KV
     # Sets keys[1] = value and keys[0] = json when id >= the id stored in
     # keys[1] (or none is stored): a monotonic "latest" register.
     abstract def set_if_newer(id_key : String, value_key : String, id : Int64, value : String) : Nil
+    # set_if_newer for every entry {id_key, value_key, id, value}, then INCR
+    # of every key in `bumps`, in that order and in one round trip.
+    abstract def set_if_newer_and_incr(entries : Array({String, String, Int64, String}), bumps : Array(String)) : Nil
     abstract def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
     abstract def del(key : String) : Nil
     abstract def getdel(key : String) : String?
@@ -62,6 +65,19 @@ module KV
 
     def set_if_newer(id_key : String, value_key : String, id : Int64, value : String) : Nil
       call(["EVAL", SET_IF_NEWER, "2", id_key, value_key, id.to_s, value])
+    end
+
+    def set_if_newer_and_incr(entries : Array({String, String, Int64, String}), bumps : Array(String)) : Nil
+      cmds = [] of Array(String)
+      entries.each { |(ik, vk, id, v)| cmds << ["EVAL", SET_IF_NEWER, "2", ik, vk, id.to_s, v] }
+      bumps.each { |k| cmds << ["INCR", k] }
+      return if cmds.empty?
+      conn = @pool.receive
+      begin
+        conn.call_pipeline(cmds)
+      ensure
+        @pool.send(conn)
+      end
     end
 
     def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
@@ -141,6 +157,11 @@ module KV
           @strings[value_key] = {value, nil}
         end
       end
+    end
+
+    def set_if_newer_and_incr(entries : Array({String, String, Int64, String}), bumps : Array(String)) : Nil
+      entries.each { |(ik, vk, id, v)| set_if_newer(ik, vk, id, v) }
+      bumps.each { |k| incr(k) }
     end
 
     def set(key : String, value : String, ttl : Time::Span? = nil, nx : Bool = false) : Bool
