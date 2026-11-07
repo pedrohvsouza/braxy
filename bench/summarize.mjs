@@ -49,6 +49,7 @@ const CONFIGS = [
   ["st4opt", "Depois · 4 processos", 0],
   ["gc10b", "Saci otimizado · 1 processo", 0],
   ["ws29p4", "Pool de frames + buffers enxutos · 4 processos", 0],
+  ["wsmax36", "Teto de usuários · 4 processos", 0],
 ];
 
 // wrk sweeps (2,000 rotating users) — a different, heavier methodology than
