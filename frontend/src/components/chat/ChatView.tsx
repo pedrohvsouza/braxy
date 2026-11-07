@@ -15,6 +15,7 @@ import { ChatHeader } from "./ChatHeader";
 import styles from "./Chat.module.css";
 import { Composer, type ComposerHandle } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
+import { useAnnouncer } from "./useAnnouncer";
 
 let tempSeq = 0;
 
@@ -49,6 +50,7 @@ function Conversation({ id }: { id: number }) {
   /** Images of optimistic messages, by client id, so a retry skips re-uploading. */
   const uploads = useRef(new Map<string, { file: File; preview: string; key?: string }>());
   const [dragging, setDragging] = useState(false);
+  const announcement = useAnnouncer(messages, me.id);
   const dragDepth = useRef(0);
 
   // Active conversation bookkeeping (used by the realtime handler).
@@ -298,6 +300,12 @@ function Conversation({ id }: { id: number }) {
       }}
     >
       {dragging && <div className={styles.dropOverlay}>{t("chat.dropImage")}</div>}
+      <button type="button" className="skip-link" onClick={() => composer.current?.focus()}>
+        {t("chat.skipToComposer")}
+      </button>
+      <div className="sr-only" role="status" aria-live="polite" data-testid="announcer">
+        {announcement}
+      </div>
       <ChatHeader convo={convo} me={me} online={otherOnline} />
       <div className={styles.scroller} ref={scroller} onScroll={onScroll} data-testid="message-list">
         {isLoading && <p className={styles.notice}>{t("common.loading")}</p>}

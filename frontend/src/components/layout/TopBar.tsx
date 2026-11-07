@@ -81,6 +81,7 @@ export function TopBar() {
         </button>
 
         <Dropdown
+          panel
           label={t("top.notifications")}
           trigger={() => (
             <>

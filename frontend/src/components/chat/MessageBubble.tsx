@@ -1,17 +1,28 @@
 import { faAt, faFaceSmile, faPen, faReply, faTrash } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { fullTimestamp } from "../../lib/format";
 import { isJumboEmoji, plainText } from "../../lib/markup";
 import type { ChatMessage, Me } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { Avatar } from "../common/Avatar";
+import { onMenuKey } from "../common/focus";
 import { UserName } from "../common/UserName";
 import styles from "./Chat.module.css";
 import { RichText } from "./RichText";
 
 export const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+
+const REACTION_NAMES: Record<string, string> = {
+  "👍": t("reaction.like"),
+  "❤️": t("reaction.love"),
+  "😂": t("reaction.haha"),
+  "😮": t("reaction.wow"),
+  "😢": t("reaction.sad"),
+  "🔥": t("reaction.fire"),
+};
+const reactionName = (e: string) => REACTION_NAMES[e] ?? e;
 
 interface Props {
   message: ChatMessage;
@@ -31,6 +42,11 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
   const { message: m, me, canModerate, seen } = props;
   const openModal = useUi((s) => s.openModal);
   const [picker, setPicker] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const reactBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (picker) pickerRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+  }, [picker]);
   const author = m.author;
   const mine = author?.id === me.id;
   const name = author?.name ?? "Usuário removido";
@@ -100,7 +116,8 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
                 type="button"
                 className={`${styles.reaction} ${r.user_ids.includes(me.id) ? styles.reacted : ""}`}
                 onClick={() => props.onReact(m, r.emoji)}
-                aria-label={`${r.emoji} ${r.count}`}
+                aria-label={t("reaction.summary", { name: reactionName(r.emoji), count: r.count })}
+                aria-pressed={r.user_ids.includes(me.id)}
               >
                 {r.emoji} <span>{r.count}</span>
               </button>
@@ -120,7 +137,7 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
               <FontAwesomeIcon icon={faAt} />
             </button>
           )}
-          <button type="button" title={t("chat.react")} aria-label={t("chat.react")} onClick={() => setPicker((p) => !p)}>
+          <button ref={reactBtn} type="button" title={t("chat.react")} aria-label={t("chat.react")} aria-haspopup="menu" aria-expanded={picker} onClick={() => setPicker((p) => !p)}>
             <FontAwesomeIcon icon={faFaceSmile} />
           </button>
           {mine && m.body && (
@@ -134,11 +151,29 @@ export const MessageBubble = memo(function MessageBubble(props: Props) {
             </button>
           )}
           {picker && (
-            <div className={styles.picker} role="menu">
+            <div
+              ref={pickerRef}
+              className={styles.picker}
+              role="menu"
+              aria-label={t("chat.react")}
+              onKeyDown={(ev) => {
+                if (ev.key === "Escape") {
+                  ev.stopPropagation();
+                  setPicker(false);
+                  reactBtn.current?.focus();
+                } else {
+                  onMenuKey(ev);
+                }
+              }}
+            >
               {EMOJIS.map((e) => (
                 <button
                   key={e}
                   type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  aria-label={reactionName(e)}
+                  title={reactionName(e)}
                   onClick={() => {
                     setPicker(false);
                     props.onReact(m, e);

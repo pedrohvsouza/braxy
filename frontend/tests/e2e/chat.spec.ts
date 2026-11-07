@@ -16,8 +16,8 @@ test("lobby: send, reply, react, edit and delete", async ({ page }) => {
 
   await mine.hover();
   await mine.getByRole("button", { name: "Reagir" }).click();
-  await mine.getByRole("button", { name: "🔥" }).click();
-  await expect(mine.getByRole("button", { name: "🔥 1" })).toBeVisible();
+  await mine.getByRole("menuitem", { name: "Fogo" }).click();
+  await expect(mine.getByRole("button", { name: "Fogo: 1" })).toBeVisible();
 
   await mine.hover();
   await mine.getByRole("button", { name: "Responder" }).click();

@@ -15,10 +15,10 @@
   --border-soft: #26283a;
   --text: #dfe1ea;
   --text-soft: #b7bacb;
-  --muted: #868aa2;
+  --muted: #9296ab; /* AA (4.5:1) on every bubble */
   --accent: #7b4dff;
   --accent-2: #a86bff;
-  --link: #2f8cff;
+  --link: #4498ff; /* AA (4.5:1) on every bubble */
   --green: #3ddc84;
   --yellow: #ffd23f;
   --red: #ff4d5e;
@@ -341,4 +341,43 @@ textarea.input {
     transform: scale(1.08);
     filter: drop-shadow(0 0 22px rgba(168, 107, 255, 0.7));
   }
+}
+
+/* Keyboard focus ring (mouse clicks stay clean). */
+:where(button, a, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(123, 77, 255, 0.25);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
 }
