@@ -7,8 +7,8 @@ module Api
 
     def show
       if user = current_user
-        Xp.daily_login(user)
-        user = User.find_by(id: user.uid) || user
+        # Reload only when the daily XP was actually paid just now.
+        user = (User.find_by(id: user.uid) || user) if Xp.daily_login(user)
         render json: {user: user.me_json, csrf_token: form_authenticity_token}
       else
         render json: {user: nil, csrf_token: form_authenticity_token}

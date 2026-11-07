@@ -14,7 +14,15 @@ class ApplicationController < Saci::Controller
   private def current_user : User?
     return @current_user if @current_user_loaded
     @current_user_loaded = true
-    @current_user = session.int(Saci::Auth.session_key).try { |id| User.find_by(id: id) }
+    id = session.int(Saci::Auth.session_key)
+    @current_user = if id.nil?
+                      nil
+                    elsif Saci::CSRF.safe_method?(request.method)
+                      UserCache.fetch(id) # read-only use
+                    else
+                      UserCache.invalidate(id)
+                      User.find_by(id: id) # fresh, safe to mutate
+                    end
   end
 
   private def me : User

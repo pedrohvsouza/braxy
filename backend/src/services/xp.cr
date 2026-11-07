@@ -44,22 +44,44 @@ module Xp
 
   # The Redis guard makes every request after the first of the day free
   # (no UPDATE at all).
+  # In-process memo of guards already settled today, so repeat requests
+  # skip even the Redis round trip.
+  @@daily_seen = Set(String).new
+  @@daily_mutex = Mutex.new
+
   def self.daily_login(user : User) : Bool
     today = Time.utc.in(BRT).at_beginning_of_day
     guard = "braxy:daily:#{user.uid}:#{today.to_s("%Y-%m-%d")}"
-    return false unless KV.backend.set(guard, "1", ttl: 26.hours, nx: true)
+    return false if @@daily_mutex.synchronize { @@daily_seen.includes?(guard) }
+    remember = ->{
+      @@daily_mutex.synchronize do
+        @@daily_seen.clear if @@daily_seen.size > 500_000
+        @@daily_seen << guard
+      end
+    }
+    unless KV.backend.set(guard, "1", ttl: 26.hours, nx: true)
+      remember.call
+      return false
+    end
+    remember.call
     day = Time.utc(today.year, today.month, today.day)
     db = Saci::Record.connection
     claimed = Saci::Record.exec_compat(db,
       "UPDATE users SET last_daily_xp_on = ? WHERE id = ? AND (last_daily_xp_on IS NULL OR last_daily_xp_on < ?)",
       [day, user.uid, day] of Saci::Record::Value).rows_affected
     return false if claimed == 0
+    UserCache.invalidate(user.uid)
     award(user.uid, "daily_login", DAILY_LOGIN, "day:#{today.to_s("%Y-%m-%d")}")
+  end
+
+  def self.reset_memo! : Nil
+    @@daily_mutex.synchronize { @@daily_seen.clear }
   end
 
   # Recomputes the stored level, notifies on level-up and pushes the new
   # progress to the user's own sockets.
   def self.after_change(user_id : Int64) : Nil
+    UserCache.invalidate(user_id)
     user = User.find_by(id: user_id)
     return if user.nil?
     progress = Levels.progress(user.xp_total)
