@@ -88,7 +88,7 @@ module Api
         render_errors(["Envie uma imagem"])
         return
       end
-      convo.update_columns(avatar_key: Uploads.store_image(file.bytes))
+      convo.update_columns(avatar_key: Uploads.store_image(file.bytes, me.uid, Uploads::AVATAR))
       Invalidation.conversation(convo.cid)
       broadcast_updated(convo)
       render json: {conversation: convo.detail_json(me)}

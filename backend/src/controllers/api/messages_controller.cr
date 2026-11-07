@@ -51,7 +51,12 @@ module Api
           return
         end
       end
-      message, created = Messaging.post(me, convo, str_param("body"), str_param("image_key"),
+      image_key = str_param("image_key").try(&.presence)
+      if image_key && !Uploads.attach(image_key, me.uid, convo.cid)
+        render_errors(["imagem inválida"])
+        return
+      end
+      message, created = Messaging.post(me, convo, str_param("body"), image_key,
         id_param("reply_to_id"), str_param("client_id"))
       if wire = message.wire
         render body: %({"message":#{wire}}), content_type: "application/json", status: created ? 201 : 200

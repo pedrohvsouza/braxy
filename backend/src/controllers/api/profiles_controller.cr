@@ -59,7 +59,7 @@ module Api
         render_errors(["Envie uma imagem"])
         return
       end
-      key = Uploads.store_image(file.bytes)
+      key = Uploads.store_image(file.bytes, me.uid, Uploads::AVATAR)
       user = fresh_me
       user.update_columns(avatar_key: key)
       Invalidation.user(user.uid)

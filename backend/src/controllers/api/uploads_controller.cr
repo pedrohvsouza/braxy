@@ -1,6 +1,6 @@
 module Api
   # POST /api/uploads   multipart `file` (image, ≤ 10 MB) -> 201 {key, url}
-  # GET  /api/files/:key                                   -> image bytes (logged-in only)
+  # GET  /api/files/:key                                   -> image bytes (see Uploads.visible_to?)
   class UploadsController < ::ApplicationController
     before_action :require_login
     rate_limit to: 20, within: 1.minute, only: [:create]
@@ -11,7 +11,7 @@ module Api
         render_errors(["Envie uma imagem"])
         return
       end
-      key = Uploads.store_image(file.bytes)
+      key = Uploads.store_image(file.bytes, me.uid, Uploads::MESSAGE)
       render json: {key: key, url: "/api/files/#{key}"}, status: :created
     rescue ex : Uploads::Invalid
       render_errors([ex.message.to_s])
@@ -19,7 +19,8 @@ module Api
 
     def show
       key = params["key"]? || ""
-      bytes = Uploads.fetch(key)
+      # Not found rather than forbidden: a key's existence stays private.
+      bytes = Uploads.visible_to?(key, me.uid) ? Uploads.fetch(key) : nil
       if bytes.nil?
         head :not_found
         return
