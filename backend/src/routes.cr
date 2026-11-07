@@ -3,6 +3,16 @@ module BraxyRoutes
   def self.build : Saci::Router
     Saci::Router.new.draw do |r|
       r.get "/up", HealthController, :show
+      # Load-test diagnostics only (BENCH_DEBUG=1): GC heap numbers.
+      if ENV["BENCH_DEBUG"]? == "1"
+        r.get("/__gc") do |ctx, _params|
+          GC.collect if ctx.request.query_params["collect"]? == "1"
+          s = GC.stats
+          ctx.response.content_type = "application/json"
+          {heap_size: s.heap_size, free_bytes: s.free_bytes, unmapped_bytes: s.unmapped_bytes,
+           bytes_since_gc: s.bytes_since_gc, total_bytes: s.total_bytes}.to_json(ctx.response)
+        end
+      end
 
       r.get "/api/session", Api::SessionsController, :show
       r.post "/api/session", Api::SessionsController, :create
