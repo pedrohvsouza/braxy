@@ -23,42 +23,50 @@ function fromProgress(text) {
 // Peak backend memory/CPU between two HH:MM:SS marks of docker-stats.csv.
 // Older samples were stamped in host local time; BENCH_TZ_OFFSET (hours to
 // add to reach UTC, e.g. 3 for UTC-3) normalizes them. New ones are UTC.
-const OFFSET = Number(process.env.BENCH_TZ_OFFSET ?? 0);
-const toUtc = (hms) => {
+const toUtc = (hms, OFFSET) => {
   if (!OFFSET) return hms;
   const [h, m, s] = hms.split(":").map(Number);
   const t = ((h + OFFSET + 24) % 24) * 3600 + m * 60 + s;
   return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60].map((n) => String(n).padStart(2, "0")).join(":");
 };
 
-function stats(file) {
+function stats(file, offset = 0) {
   if (!existsSync(file)) return [];
   return readFileSync(file, "utf8").trim().split("\n").slice(1).map((l) => {
     const [time, name, cpu, mem] = l.split(",");
     const used = mem.split("/")[0].trim();
     const mib = used.endsWith("GiB") ? parseFloat(used) * 1024 : used.endsWith("KiB") ? parseFloat(used) / 1024 : parseFloat(used);
-    return { time: toUtc(time), name, cpu: parseFloat(cpu), mib };
+    return { time: toUtc(time, offset), name, cpu: parseFloat(cpu), mib };
   });
 }
 
+// slug, label, hours to add to the stats CSV clock to reach UTC (the first
+// two runs were sampled in host local time, UTC-3).
+const CONFIGS = [
+  ["mt", "Antes · multithread", 3],
+  ["st", "Antes · 1 processo", 3],
+  ["st1opt", "Depois · 1 processo", 0],
+  ["st4opt", "Depois · 4 processos", 0],
+];
+
 const http = [];
-for (const [config, file] of [["MT (4 workers)", "results/http-sweep-mt.txt"], ["ST (1 thread)", "results/http-sweep-st.txt"]]) {
+for (const [slug, config] of CONFIGS) {
+  const file = `results/http-sweep-${slug}.txt`;
   if (!existsSync(file)) continue;
   for (const p of json(file) ?? []) http.push({ config, ...p });
 }
 writeFileSync("results/http_sweep.json", JSON.stringify(http, null, 1));
 
 const ws = [];
-for (const [config, file, statsFile] of [
-  ["MT (4 workers)", "results/ws-mt.txt", "results/ws-mt-stats.csv"],
-  ["ST (1 thread)", "results/ws-st.txt", "results/ws-st-stats.csv"],
-]) {
+for (const [slug, config, offset] of CONFIGS) {
+  const file = `results/ws-${slug}.txt`;
+  const statsFile = `results/ws-${slug}-stats.csv`;
   if (!existsSync(file)) continue;
   const text = readFileSync(file, "utf8");
   // "[HH:MM:SS] STEP n:" marks where each step starts.
   const marks = [...text.matchAll(/\[(\d\d:\d\d:\d\d)\] STEP (\d+):/g)].map((m) => ({ t: m[1], users: +m[2] }));
-  const samples = stats(statsFile).filter((s) => s.name.includes("backend"));
-  const pg = stats(statsFile).filter((s) => s.name.includes("pg"));
+  const samples = stats(statsFile, offset).filter((s) => s.name.includes("backend"));
+  const pg = stats(statsFile, offset).filter((s) => s.name.includes("pg"));
   for (const row of json(file) ?? fromProgress(text)) {
     const i = marks.findIndex((m) => m.users === row["usuários"]);
     const from = marks[i]?.t ?? "00:00:00";
