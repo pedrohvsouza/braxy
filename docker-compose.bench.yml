@@ -10,7 +10,7 @@ services:
     cpuset: "0-3"
     mem_limit: 1024m
     shm_size: 320m
-    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "effective_cache_size=640MB", "-c", "work_mem=4MB", "-c", "synchronous_commit=on", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "effective_cache_size=640MB", "-c", "work_mem=4MB", "-c", "synchronous_commit=on", "-c", "wal_buffers=32MB", "-c", "max_wal_size=4GB", "-c", "checkpoint_timeout=15min", "-c", "commit_delay=100", "-c", "commit_siblings=3", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
 
   redis:
     cpuset: "0-3"
@@ -27,6 +27,9 @@ services:
       # Boehm GC: higher = less free heap kept in reserve (more GC work).
       GC_FREE_SPACE_DIVISOR: ${GC_FREE_SPACE_DIVISOR:-10}
       BENCH_DEBUG: "1"
+      MESSAGE_WRITERS: ${MESSAGE_WRITERS:-1}
+      GC_MARKERS: ${GC_MARKERS:-2}
+      SACI_GC_HEAP_LIMIT: ${SACI_GC_HEAP_LIMIT:-280M}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       CRYSTAL_WORKERS: "4"
       # Per process. Keep processes x pool near the core count (bin/multi: DB_POOL=8).
