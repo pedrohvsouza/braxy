@@ -1,0 +1,60 @@
+# Benchmark profile: the system under test (backend + postgres + redis) is
+# confined to 4 cores (cpuset 0-3) and 2 GB RAM in total; the load generator
+# runs on the remaining cores, inside the compose network (no docker-proxy).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d pg redis s3 backend loadgen
+#   docker compose -f docker-compose.yml -f docker-compose.bench.yml exec loadgen node http.mjs
+services:
+  pg:
+    cpuset: "0-3"
+    mem_limit: 768m
+    shm_size: 256m
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=192MB", "-c", "synchronous_commit=on"]
+
+  redis:
+    cpuset: "0-3"
+    mem_limit: 256m
+
+  backend:
+    cpuset: "0-3"
+    mem_limit: 1g
+    memswap_limit: 1g
+    environment:
+      LOG_REQUESTS: "0"
+      RATE_LIMIT: "off"
+      SACI_MT: ${SACI_MT:-1}
+      CRYSTAL_WORKERS: "4"
+      DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_development?initial_pool_size=8&max_idle_pool_size=32&max_pool_size=32&retry_delay=0.001
+      APP_ORIGINS: http://localhost:5173,http://bench.local
+    # Runs the prebuilt release binary (the compiler itself needs >1 GB, so
+    # the build happens outside the limits — see bench/README.md):
+    #   docker compose run --rm --no-deps backend sh -c \
+    #     'crystal build --release -Dexecution_context src/backend.cr -o tmp/bench-backend'
+    # BENCH_CMD picks the binary/topology, e.g. "bin/multi ./tmp/bench-backend-st".
+    command: ["sh", "-c", "exec ${BENCH_CMD:-./tmp/bench-backend}"]
+    ulimits:
+      nofile: { soft: 200000, hard: 200000 }
+    healthcheck:
+      start_period: 600s
+
+  frontend:
+    profiles: ["dev-only"]
+
+  loadgen:
+    image: node:22-alpine
+    cpuset: "4-15"
+    working_dir: /bench
+    command: ["sh", "-c", "npm install --no-audit --no-fund >/dev/null 2>&1; sleep infinity"]
+    environment:
+      TARGET: http://backend:3000
+    volumes:
+      - ./bench:/bench
+      - bench_modules:/bench/node_modules
+    ulimits:
+      nofile: { soft: 200000, hard: 200000 }
+    sysctls:
+      net.ipv4.ip_local_port_range: "1024 65000"
+    depends_on: [backend]
+
+volumes:
+  bench_modules:

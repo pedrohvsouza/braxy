@@ -1,0 +1,9 @@
+{
+  "name": "braxy-bench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "autocannon": "9.0.0",
+    "ws": "8.22.1"
+  }
+}
