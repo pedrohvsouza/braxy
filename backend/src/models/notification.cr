@@ -1,5 +1,5 @@
 class Notification < ApplicationRecord
-  KINDS = ["friend_request", "friend_accepted", "mention", "reply", "level_up", "group_added"]
+  KINDS = ["friend_request", "friend_accepted", "mention", "reply", "level_up", "group_added", "achievement"]
 
   column id : Int64, primary: true
   column user_id : Int64
@@ -11,7 +11,7 @@ class Notification < ApplicationRecord
   column read_at : Time
   timestamps
 
-  validates :kind, inclusion: {in: ["friend_request", "friend_accepted", "mention", "reply", "level_up", "group_added"]}
+  validates :kind, inclusion: {in: ["friend_request", "friend_accepted", "mention", "reply", "level_up", "group_added", "achievement"]}
 
   def self.unread_count(user_id : Int64) : Int64
     where("user_id = ? AND read_at IS NULL", user_id).count

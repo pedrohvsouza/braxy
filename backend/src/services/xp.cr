@@ -107,6 +107,7 @@ module Xp
         Notification.deliver!(user_id, "level_up", payload: {"level" => progress[:level]})
       end
     end
+    Achievements.check_later(user_id)
     Realtime.to_user(user_id, {
       type:       "xp.updated",
       xp:         user.xp_total,

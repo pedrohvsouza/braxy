@@ -60,9 +60,9 @@ describe "messages API" do
       res.status_code.should eq(201)
       msg = JSON.parse(res.body)["message"]
       msg["reply_to"]["author_name"].as_s.should eq("Ana")
-      Notification.where(user_id: ana.uid).not(kind: "level_up").to_a.map(&.kind).should eq(["reply"])
-      Notification.where(user_id: cid.uid).not(kind: "level_up").to_a.map(&.kind).should eq(["mention"])
-      Notification.where(user_id: bob.uid).not(kind: "level_up").count.should eq(0)
+      Notification.where(user_id: ana.uid).where("kind NOT IN ('level_up', 'achievement')").to_a.map(&.kind).should eq(["reply"])
+      Notification.where(user_id: cid.uid).where("kind NOT IN ('level_up', 'achievement')").to_a.map(&.kind).should eq(["mention"])
+      Notification.where(user_id: bob.uid).where("kind NOT IN ('level_up', 'achievement')").count.should eq(0)
     end
   end
 

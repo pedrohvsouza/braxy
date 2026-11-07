@@ -76,18 +76,19 @@ class User < ApplicationRecord
   def profile_json(viewer : User? = nil)
     progress = Levels.progress(xp_total)
     {
-      id:         id,
-      name:       name,
-      username:   username,
-      role:       role,
-      avatar_url: avatar_url,
-      bio:        bio,
-      birthday:   birthday.try(&.to_s("%Y-%m-%d")),
-      level:      progress[:level],
-      xp:         xp_total,
-      online:     online?,
-      joined_at:  created_at.try(&.to_rfc3339),
-      friendship: viewer ? Friendship.status_json(viewer.uid, uid) : nil,
+      id:           id,
+      name:         name,
+      username:     username,
+      role:         role,
+      avatar_url:   avatar_url,
+      bio:          bio,
+      birthday:     birthday.try(&.to_s("%Y-%m-%d")),
+      level:        progress[:level],
+      xp:           xp_total,
+      online:       online?,
+      joined_at:    created_at.try(&.to_rfc3339),
+      friendship:   viewer ? Friendship.status_json(viewer.uid, uid) : nil,
+      achievements: UserAchievement.for_user(uid).map { |(key, at)| {key: key, unlocked_at: at.try(&.to_rfc3339)} },
     }
   end
 

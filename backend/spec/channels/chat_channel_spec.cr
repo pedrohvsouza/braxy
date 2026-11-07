@@ -80,7 +80,12 @@ describe ChatChannel do
         bb = Fixtures.browser(app, bob)
         res = bb.post("/api/conversations", {name: "Nova", member_ids: [ana.uid]})
         gid = JSON.parse(res.body)["conversation"]["id"].as_i64
-        wait_for(listener, "notification.created")["notification"]["kind"].as_s.should eq("group_added")
+        # (Logging in pays daily XP, which may unlock a badge first.)
+        note = wait_for(listener, "notification.created")
+        while note["notification"]["kind"].as_s == "achievement"
+          note = wait_for(listener, "notification.created")
+        end
+        note["notification"]["kind"].as_s.should eq("group_added")
         wait_for(listener, "conversation.added")["conversation_id"].as_i64.should eq(gid)
 
         # Not following yet: a foreign conversation id is ignored.
