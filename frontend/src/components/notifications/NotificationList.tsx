@@ -1,5 +1,5 @@
 import {
-  faArrowUpRightDots, faAt, faCheck, faReply, faUserGroup, faUserPlus, type IconDefinition,
+  faArrowUpRightDots, faAt, faCheck, faReply, faTrophy, faUserGroup, faUserPlus, type IconDefinition,
 } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,6 +19,7 @@ const ICON: Record<NotificationKind, IconDefinition> = {
   mention: faAt,
   reply: faReply,
   level_up: faArrowUpRightDots,
+  achievement: faTrophy,
   group_added: faUserGroup,
 };
 
@@ -34,7 +35,9 @@ export function useOpenNotification() {
         ),
       );
     }
+    const me = qc.getQueryData<{ user: { username: string } | null }>(keys.session)?.user;
     if (n.kind === "friend_request") openModal({ kind: "requests" });
+    else if (n.kind === "achievement" && me) openModal({ kind: "profile", username: me.username });
     else if (n.kind === "friend_accepted" && n.actor) openModal({ kind: "profile", username: n.actor.username });
     else if (n.conversation_id) navigate(`/c/${n.conversation_id}`);
   };

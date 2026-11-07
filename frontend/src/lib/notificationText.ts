@@ -1,4 +1,5 @@
 import { t } from "../i18n";
+import { achievementIcon, achievementName } from "./achievements";
 import type { AppNotification } from "./types";
 
 export function notificationText(n: AppNotification): string {
@@ -6,6 +7,10 @@ export function notificationText(n: AppNotification): string {
   const where = String(n.payload.conversation_name ?? "Grupo");
   const preview = String(n.payload.preview ?? "");
   switch (n.kind) {
+    case "achievement": {
+      const key = String(n.payload.key ?? "");
+      return t("notif.achievement", { icon: achievementIcon(key), name: achievementName(key) });
+    }
     case "level_up":
       return t("notif.level_up", { level: Number(n.payload.level ?? 0) });
     case "mention":

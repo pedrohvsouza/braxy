@@ -2,10 +2,12 @@ import { faCakeCandles, faCalendar } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { t } from "../../i18n";
+import { ACHIEVEMENTS, achievementDescription, achievementName } from "../../lib/achievements";
 import { api } from "../../lib/api";
 import { birthdayLabel, longDate } from "../../lib/format";
 import { keys } from "../../lib/queries";
 import { levelTier, roleLabel } from "../../lib/roles";
+import type { Profile } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { Avatar } from "../common/Avatar";
 import { Modal } from "../common/Modal";
@@ -47,6 +49,7 @@ export function ProfileModal({ username }: { username: string }) {
               </li>
             )}
           </ul>
+          <Achievements unlocked={user.achievements ?? []} />
           {user.friendship && user.friendship.status !== "self" && (
             <div className={styles.buttons}>
               <FriendAction result={{ user, friendship: user.friendship }} onDone={close} />
@@ -73,5 +76,31 @@ export function ProfileModal({ username }: { username: string }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+function Achievements({ unlocked }: { unlocked: Profile["achievements"] }) {
+  const at = new Map(unlocked.map((a) => [a.key, a.unlocked_at]));
+  return (
+    <section className={styles.badges} aria-label={t("profile.achievements", { count: at.size, total: ACHIEVEMENTS.length })}>
+      <h3>{t("profile.achievements", { count: at.size, total: ACHIEVEMENTS.length })}</h3>
+      <ul>
+        {ACHIEVEMENTS.map(({ key, icon }) => {
+          const won = at.has(key);
+          const when = at.get(key);
+          const detail = won
+            ? `${achievementDescription(key)} ${when ? t("profile.unlockedOn", { date: longDate(when) }) : ""}`.trim()
+            : `${t("profile.locked")}: ${achievementDescription(key)}`;
+          return (
+            <li key={key} className={won ? styles.badgeOn : styles.badgeOff} title={detail} data-testid={`badge-${key}`}>
+              <span aria-hidden>{icon}</span>
+              <span className="sr-only">
+                {achievementName(key)}. {detail}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

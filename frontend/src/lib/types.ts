@@ -34,6 +34,7 @@ export interface Profile extends UserSummary {
   online: boolean;
   joined_at: string;
   friendship: FriendshipState | null;
+  achievements: { key: string; unlocked_at: string | null }[];
 }
 
 export interface Preview {
@@ -132,6 +133,7 @@ export type NotificationKind =
   | "mention"
   | "reply"
   | "level_up"
+  | "achievement"
   | "group_added";
 
 export interface AppNotification {
