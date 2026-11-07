@@ -59,6 +59,7 @@ module Api
       end
       message, created = Messaging.post(me, convo, str_param("body"), str_param("image_key"),
         id_param("reply_to_id"), str_param("client_id"))
+      WebPush.message_later(convo, message, me) if created
       if wire = message.wire
         render body: %({"message":#{wire}}), content_type: "application/json", status: created ? 201 : 200
       else

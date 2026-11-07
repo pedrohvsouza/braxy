@@ -67,6 +67,11 @@ module BraxyRoutes
 
       r.get "/api/stats", Api::StatsController, :show
 
+      r.get "/api/push/key", Api::PushController, :key
+      r.post "/api/push/subscriptions", Api::PushController, :subscribe
+      r.delete "/api/push/subscriptions", Api::PushController, :unsubscribe
+      r.get "/api/push/latest", Api::PushController, :latest
+
       r.cable "/cable", ChatChannel
     end
   end
