@@ -3,6 +3,7 @@ module Api
   # POST   /api/conversations {name, member_ids} -> 201 group (creator = owner)
   # POST   /api/conversations/dm {user_id}       -> DM with a friend (find or create)
   # GET    /api/conversations/:id                -> detail + members
+  # GET    /api/conversations/:id/members?q=&cursor=&limit= -> {members, next_cursor}
   # PATCH  /api/conversations/:id {name}         -> owner only
   # POST   /api/conversations/:id/avatar         -> owner only (multipart file)
   # POST   /api/conversations/:id/members {user_ids}       -> owner adds
@@ -23,6 +24,15 @@ module Api
       convo = member_conversation
       return if convo.nil?
       render json: {conversation: convo.detail_json(me)}
+    end
+
+    def members
+      convo = member_conversation
+      return if convo.nil?
+      after = params["cursor"]?.try(&.to_i64?)
+      limit = params["limit"]?.try(&.to_i?) || 50
+      rows, next_cursor = convo.members_page(params["q"]? || "", after, limit)
+      render json: {members: Conversation.members_json(rows), next_cursor: next_cursor}
     end
 
     def create
@@ -100,7 +110,7 @@ module Api
       convo = owned_group
       return if convo.nil?
       friend_ids = Friendship.friend_ids(me.uid).to_set
-      ids = id_list_param("user_ids").select { |i| friend_ids.includes?(i) && !convo.member?(i) }
+      ids = id_list_param("user_ids").select { |i| friend_ids.includes?(i) && !convo.member?(i) && !Moderation.banned?(convo.cid, i) }
       if convo.member_count + ids.size > MAX_GROUP_MEMBERS
         render_errors(["Grupo pode ter no máximo #{MAX_GROUP_MEMBERS} membros"])
         return

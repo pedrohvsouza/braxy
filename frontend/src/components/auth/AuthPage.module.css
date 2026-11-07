@@ -122,10 +122,48 @@
 
 .forgot {
   align-self: center;
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: 0.82rem;
   color: var(--muted);
-  cursor: not-allowed;
-  opacity: 0.7;
+  cursor: pointer;
+}
+
+.forgot:hover,
+.forgot:focus-visible {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-soft);
+  text-align: center;
+}
+
+.note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(61, 220, 132, 0.12);
+  color: var(--green);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.resetCard {
+  position: relative;
+  z-index: 1;
+  width: min(420px, calc(100vw - 32px));
+  padding: 32px 28px;
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
 }
 
 .overlayBox {
@@ -333,4 +371,8 @@
   .eagle {
     animation: none;
   }
+}
+
+.resetCard .form {
+  padding: 0;
 }

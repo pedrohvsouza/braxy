@@ -1,12 +1,16 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthPage } from "./components/auth/AuthPage";
+import { ResetPasswordPage } from "./components/auth/ResetPasswordPage";
 import { ChatView } from "./components/chat/ChatView";
 import { EmptyState } from "./components/empty/EmptyState";
+import { ServerStarting } from "./components/layout/ServerStarting";
 import { Shell } from "./components/layout/Shell";
+import { isUnavailable } from "./lib/api";
 import { useSession } from "./lib/queries";
 
 export function App() {
-  const { data, isLoading, isError, refetch } = useSession();
+  const { data, error, isLoading, isError, isFetching, refetch } = useSession();
+  const { pathname } = useLocation();
 
   if (isLoading) {
     return (
@@ -15,18 +19,11 @@ export function App() {
       </div>
     );
   }
-  if (isError) {
-    return (
-      <div className="boot">
-        <p>
-          Servidor indisponível.{" "}
-          <button className="btn btn-sm" onClick={() => void refetch()} type="button">
-            Tentar de novo
-          </button>
-        </p>
-      </div>
-    );
+  if (isError && !data) {
+    return <ServerStarting starting={isUnavailable(error)} retrying={isFetching} onRetry={() => void refetch()} />;
   }
+  // The emailed link works signed in or out (it signs in when done).
+  if (pathname === "/reset-password") return <ResetPasswordPage />;
   if (!data?.user) return <AuthPage />;
 
   return (

@@ -25,6 +25,10 @@ module Api
         not_found("usuário não encontrado")
         return
       end
+      if Moderation.blocked_between?(me.uid, target.uid)
+        forbidden("Não é possível adicionar este usuário")
+        return
+      end
       existing = Friendship.between(me.uid, target.uid)
       if existing
         if existing.accepted?

@@ -64,6 +64,12 @@ module Api
           forbidden("Vocês não são mais amigos")
           return
         end
+      else
+        muted, until_ = Moderation.mute_of(convo.cid, me.uid)
+        if muted
+          forbidden(until_ ? "Você está silenciado nesta conversa até #{until_.in(Xp::BRT).to_s("%H:%M")}" : "Você está silenciado nesta conversa")
+          return
+        end
       end
       image_key = str_param("image_key").try(&.presence)
       if image_key && !Uploads.attach(image_key, me.uid, convo.cid)
@@ -72,6 +78,7 @@ module Api
       end
       message, created = Messaging.post(me, convo, str_param("body"), image_key,
         id_param("reply_to_id"), str_param("client_id"))
+      WebPush.message_later(convo, message, me) if created
       if wire = message.wire
         render body: %({"message":#{wire}}), content_type: "application/json", status: created ? 201 : 200
       else

@@ -1,30 +1,37 @@
-import { faCrown } from "@fortawesome/free-solid-svg-icons";
+import { faCrown, faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
-import { keys, useConversation, useMe, useSidebar } from "../../lib/queries";
+import { keys, useConversation, useMe, useMembers, useSidebar } from "../../lib/queries";
+import type { ConversationDetail } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { Avatar } from "../common/Avatar";
 import { Modal } from "../common/Modal";
 import { UserName } from "../common/UserName";
+import { SanctionList } from "../moderation/SanctionList";
 import { FriendPicker } from "./FriendPicker";
 import styles from "./Groups.module.css";
 
 export function GroupInfoModal({ conversationId }: { conversationId: number }) {
   const close = useUi((s) => s.closeModal);
-  const openModal = useUi((s) => s.openModal);
   const me = useMe();
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: convo } = useConversation(conversationId);
+  const { data: convo, dataUpdatedAt } = useConversation(conversationId);
   const { data: sidebar } = useSidebar();
   const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [errors, setErrors] = useState<string[]>([]);
   const file = useRef<HTMLInputElement>(null);
+
+  // Membership changes (here or from the realtime feed) refetch the detail;
+  // the member pages follow it.
+  useEffect(() => {
+    void qc.invalidateQueries({ queryKey: ["members", conversationId] });
+  }, [dataUpdatedAt, conversationId, qc]);
 
   if (!convo) return null;
   const memberIds = new Set(convo.members.map((m) => m.user.id));
@@ -48,8 +55,6 @@ export function GroupInfoModal({ conversationId }: { conversationId: number }) {
     const name = String(new FormData(e.currentTarget).get("name"));
     void guard(() => api.renameGroup(conversationId, name));
   };
-
-  const members = [...convo.members].sort((a, b) => (a.role === "owner" ? -1 : b.role === "owner" ? 1 : Number(b.online) - Number(a.online)));
 
   return (
     <Modal title={t("group.infoTitle")} onClose={close} width={460}>
@@ -125,25 +130,8 @@ export function GroupInfoModal({ conversationId }: { conversationId: number }) {
             ))}
           </ul>
         )}
-        <h3 className={styles.subTitle}>
-          {t("group.membersTitle")} · {convo.member_count}
-        </h3>
-        <div className={styles.members}>
-          {members.slice(0, 200).map((m) => (
-            <div key={m.user.id} className={styles.member}>
-              <button type="button" className={styles.memberMain} onClick={() => openModal({ kind: "profile", username: m.user.username })}>
-                <Avatar name={m.user.name} url={m.user.avatar_url} size={34} online={m.online} />
-                <UserName name={m.user.name} role={m.user.role} level={m.user.level} />
-                {m.role === "owner" && <FontAwesomeIcon icon={faCrown} className={styles.crown} title={t("group.owner")} />}
-              </button>
-              {convo.can_manage && m.role !== "owner" && (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => void guard(() => api.removeMember(conversationId, m.user.id))}>
-                  {t("group.remove")}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
+        <MemberList convo={convo} onRemove={(userId) => void guard(() => api.removeMember(conversationId, userId))} />
+        {convo.can_moderate && <SanctionList conversationId={convo.id} />}
         {convo.kind === "group" && !convo.can_manage && (
           <button
             type="button"
@@ -162,5 +150,74 @@ export function GroupInfoModal({ conversationId }: { conversationId: number }) {
         )}
       </div>
     </Modal>
+  );
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setV(value), ms);
+    return () => window.clearTimeout(id);
+  }, [value, ms]);
+  return v;
+}
+
+/** Paginated, searchable member list; loads more as the end scrolls in. */
+function MemberList({ convo, onRemove }: { convo: ConversationDetail; onRemove: (userId: number) => void }) {
+  const openModal = useUi((s) => s.openModal);
+  const [term, setTerm] = useState("");
+  const q = useDebounced(term.trim(), 250);
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useMembers(convo.id, q);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const members = data?.pages.flatMap((p) => p.members) ?? [];
+
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !hasNextPage || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return (
+    <>
+      <h3 className={styles.subTitle}>
+        {t("group.membersTitle")} · {convo.member_count.toLocaleString("pt-BR")}
+      </h3>
+      {convo.member_count > 8 && (
+        <label className={styles.memberSearch}>
+          <FontAwesomeIcon icon={faMagnifyingGlass} aria-hidden />
+          <input
+            className="input"
+            type="search"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder={t("group.searchMembers")}
+            aria-label={t("group.searchMembers")}
+          />
+        </label>
+      )}
+      <div className={styles.members} data-testid="member-list">
+        {members.map((m) => (
+          <div key={m.user.id} className={styles.member}>
+            <button type="button" className={styles.memberMain} onClick={() => openModal({ kind: "profile", username: m.user.username })}>
+              <Avatar name={m.user.name} url={m.user.avatar_url} size={34} online={m.online} />
+              <UserName name={m.user.name} role={m.user.role} level={m.user.level} />
+              {m.role === "owner" && <FontAwesomeIcon icon={faCrown} className={styles.crown} title={t("group.owner")} />}
+            </button>
+            {convo.can_manage && m.role !== "owner" && (
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => onRemove(m.user.id)}>
+                {t("group.remove")}
+              </button>
+            )}
+          </div>
+        ))}
+        {!isLoading && members.length === 0 && <p className={styles.memberNote}>{t("group.noMembersFound")}</p>}
+        {(isLoading || isFetchingNextPage) && <p className={styles.memberNote}>{t("common.loading")}</p>}
+        <div ref={sentinel} aria-hidden className={styles.sentinel} />
+      </div>
+    </>
   );
 }

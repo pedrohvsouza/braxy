@@ -17,6 +17,7 @@ class User < ApplicationRecord
   column last_seen_at : Time
   column last_daily_xp_on : Date
   column last_message_xp_at : Time
+  column session_token : String
   timestamps
 
   has_secure_password
@@ -34,6 +35,13 @@ class User < ApplicationRecord
 
   def uid : Int64
     id.not_nil!
+  end
+
+  # Ends every session but the one logged in next (see
+  # ApplicationController#current_user).
+  def rotate_session_token! : Nil
+    update_columns(session_token: Random::Secure.urlsafe_base64(24))
+    Invalidation.user(uid)
   end
 
   def staff? : Bool
@@ -68,18 +76,20 @@ class User < ApplicationRecord
   def profile_json(viewer : User? = nil)
     progress = Levels.progress(xp_total)
     {
-      id:         id,
-      name:       name,
-      username:   username,
-      role:       role,
-      avatar_url: avatar_url,
-      bio:        bio,
-      birthday:   birthday.try(&.to_s("%Y-%m-%d")),
-      level:      progress[:level],
-      xp:         xp_total,
-      online:     online?,
-      joined_at:  created_at.try(&.to_rfc3339),
-      friendship: viewer ? Friendship.status_json(viewer.uid, uid) : nil,
+      id:           id,
+      name:         name,
+      username:     username,
+      role:         role,
+      avatar_url:   avatar_url,
+      bio:          bio,
+      birthday:     birthday.try(&.to_s("%Y-%m-%d")),
+      level:        progress[:level],
+      xp:           xp_total,
+      online:       online?,
+      joined_at:    created_at.try(&.to_rfc3339),
+      friendship:   viewer ? Friendship.status_json(viewer.uid, uid) : nil,
+      achievements: UserAchievement.for_user(uid).map { |(key, at)| {key: key, unlocked_at: at.try(&.to_rfc3339)} },
+      blocked:      viewer ? Moderation.blocked_ids(viewer.uid).includes?(uid) : false,
     }
   end
 
@@ -107,7 +117,10 @@ class User < ApplicationRecord
     q = term.strip.downcase.lchop("@")
     return [] of User if q.empty?
     like = "%#{q.gsub(/[%_\\]/) { |c| "\\#{c}" }}%"
-    User.where("(LOWER(username) LIKE ? OR LOWER(name) LIKE ?) AND id <> ?", like, like, exclude_id)
+    User.where("(LOWER(username) LIKE ? OR LOWER(name) LIKE ?) AND id <> ? " \
+               "AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = ?) " \
+               "AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id = ?)",
+      like, like, exclude_id, exclude_id, exclude_id)
       .order(:username).limit(limit).to_a
   end
 

@@ -25,6 +25,9 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [signinErrors, setSigninErrors] = useState<string[]>([]);
   const [signupErrors, setSignupErrors] = useState<string[]>([]);
+  const [forgot, setForgot] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotErrors, setForgotErrors] = useState<string[]>([]);
 
   const finish = (user: Awaited<ReturnType<typeof api.login>>["user"]) => {
     qc.setQueryData(keys.session, { user });
@@ -43,6 +46,27 @@ export function AuthPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const onForgot = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    setBusy(true);
+    setForgotErrors([]);
+    try {
+      await api.requestPasswordReset(String(form.get("email")));
+      setForgotSent(true);
+    } catch (err) {
+      setForgotErrors(err instanceof ApiError ? err.errors : [t("common.error")]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showForgot = (on: boolean) => {
+    setForgot(on);
+    setForgotSent(false);
+    setForgotErrors([]);
   };
 
   const onSignUp = async (e: FormEvent<HTMLFormElement>) => {
@@ -84,19 +108,41 @@ export function AuthPage() {
         </div>
 
         <div className={`${styles.formBox} ${styles.signIn}`} aria-hidden={mode !== "signin"}>
+          {forgot ? (
+            <form className={styles.form} onSubmit={onForgot} data-testid="forgot-form">
+              <img src="/braxy-logo.png" alt="" className={styles.formLogo} />
+              <h1>{t("auth.forgotTitle")}</h1>
+              {forgotSent ? (
+                <p className={styles.note} role="status">{t("auth.forgotSent")}</p>
+              ) : (
+                <>
+                  <p className={styles.hint}>{t("auth.forgotText")}</p>
+                  <input className="input" name="email" type="email" placeholder={t("auth.email")} autoComplete="email" required autoFocus tabIndex={mode === "signin" ? 0 : -1} />
+                  <Errors errors={forgotErrors} />
+                  <button className="btn" disabled={busy} tabIndex={mode === "signin" ? 0 : -1}>
+                    {busy ? t("auth.working") : t("auth.forgotSend")}
+                  </button>
+                </>
+              )}
+              <button type="button" className={styles.forgot} onClick={() => showForgot(false)} tabIndex={mode === "signin" ? 0 : -1}>
+                {t("auth.backToSignIn")}
+              </button>
+            </form>
+          ) : (
           <form className={styles.form} onSubmit={onSignIn} data-testid="signin-form">
             <img src="/braxy-logo.png" alt="" className={styles.formLogo} />
             <h1>{t("auth.signInTitle")}</h1>
             <input className="input" name="login" placeholder={t("auth.login")} autoComplete="username" required tabIndex={mode === "signin" ? 0 : -1} />
             <input className="input" name="password" type="password" placeholder={t("auth.password")} autoComplete="current-password" required tabIndex={mode === "signin" ? 0 : -1} />
-            <span className={styles.forgot} title={t("auth.forgotSoon")} aria-disabled="true">
+            <button type="button" className={styles.forgot} onClick={() => showForgot(true)} tabIndex={mode === "signin" ? 0 : -1}>
               {t("auth.forgot")}
-            </span>
+            </button>
             <Errors errors={signinErrors} />
             <button className="btn" disabled={busy} tabIndex={mode === "signin" ? 0 : -1}>
               {busy ? t("auth.working") : t("auth.signIn")}
             </button>
           </form>
+          )}
         </div>
 
         <div className={styles.overlayBox}>

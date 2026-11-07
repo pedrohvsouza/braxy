@@ -1,21 +1,35 @@
 import { type InfiniteData, QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { api } from "./api";
-import type { ChatMessage, Me, MessagesPage, NotificationsData, SidebarData, Stats } from "./types";
+import { useMemo } from "react";
+import { api, isUnavailable } from "./api";
+import type { ChatMessage, Me, MembersPage, MessagesPage, NotificationsData, SidebarData, Stats } from "./types";
 
 export const keys = {
   session: ["session"] as const,
   sidebar: ["sidebar"] as const,
   conversation: (id: number) => ["conversation", id] as const,
   messages: (id: number) => ["messages", id] as const,
+  members: (id: number, q = "") => ["members", id, q] as const,
   notifications: ["notifications"] as const,
   friendships: ["friendships"] as const,
+  blocks: ["blocks"] as const,
+  sanctions: (id: number) => ["sanctions", id] as const,
   stats: ["stats"] as const,
   profile: (username: string) => ["profile", username] as const,
   search: (q: string) => ["search", q] as const,
 };
 
+export const BOOT_RETRY_MS = 3000;
+
 export function useSession() {
-  return useQuery({ queryKey: keys.session, queryFn: api.session, staleTime: Infinity });
+  return useQuery({
+    queryKey: keys.session,
+    queryFn: api.session,
+    staleTime: Infinity,
+    // A backend that is starting shows the waiting screen right away and is
+    // polled until it answers.
+    retry: (count, err) => !isUnavailable(err) && count < 1,
+    refetchInterval: (query) => (isUnavailable(query.state.error) ? BOOT_RETRY_MS : false),
+  });
 }
 
 let lastMe: Me | null = null;
@@ -47,12 +61,33 @@ export function useMessages(id: number) {
   });
 }
 
+/** Member pages of a conversation, in join order, filtered by `q`. */
+export function useMembers(id: number, q: string) {
+  return useInfiniteQuery({
+    queryKey: keys.members(id, q),
+    queryFn: ({ pageParam }) => api.members(id, { q, cursor: pageParam || undefined }),
+    initialPageParam: 0,
+    getNextPageParam: (last: MembersPage) => last.next_cursor ?? undefined,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useNotifications() {
   return useQuery({ queryKey: keys.notifications, queryFn: api.notifications });
 }
 
 export function useStats() {
   return useQuery({ queryKey: keys.stats, queryFn: () => api.stats().then((r) => r.stats) });
+}
+
+/** Ids of the users I blocked (their messages show collapsed). */
+export function useBlockedIds(): Set<number> {
+  const { data } = useQuery({ queryKey: keys.blocks, queryFn: api.blocks, staleTime: 60_000 });
+  return useMemo(() => new Set((data?.users ?? []).map((u) => u.id)), [data]);
+}
+
+export function useSanctions(id: number, enabled: boolean) {
+  return useQuery({ queryKey: keys.sanctions(id), queryFn: () => api.sanctions(id).then((r) => r.sanctions), enabled });
 }
 
 export function useFriendships() {
@@ -110,6 +145,38 @@ export function removeMessage(qc: QueryClient, conversationId: number, id: numbe
   qc.setQueryData<MessagesCache>(keys.messages(conversationId), (data) =>
     data && { ...data, pages: data.pages.map((p) => ({ ...p, messages: p.messages.filter((m) => m.id !== id) })) },
   );
+}
+
+/**
+ * Drops all but the newest `keep` messages of a conversation from the cache.
+ * The cut page is marked `has_more`, so scrolling up pages them back in.
+ * Returns whether anything was dropped.
+ */
+export function trimMessages(qc: QueryClient, conversationId: number, keep: number): boolean {
+  let trimmed = false;
+  qc.setQueryData<MessagesCache>(keys.messages(conversationId), (data) => {
+    if (!data) return data;
+    const pages: MessagesPage[] = [];
+    let count = 0;
+    for (const page of data.pages) {
+      const room = keep - count;
+      if (room <= 0) break;
+      if (page.messages.length > room) {
+        pages.push({ ...page, messages: page.messages.slice(-room), has_more: true });
+        count = keep;
+      } else {
+        pages.push(page);
+        count += page.messages.length;
+      }
+    }
+    const dropped = pages.length < data.pages.length || pages[pages.length - 1] !== data.pages[pages.length - 1];
+    if (!dropped) return data;
+    trimmed = true;
+    const last = pages.length - 1;
+    pages[last] = { ...pages[last], has_more: true };
+    return { pages, pageParams: data.pageParams.slice(0, pages.length) };
+  });
+  return trimmed;
 }
 
 export function lastMessageId(qc: QueryClient, conversationId: number): number {

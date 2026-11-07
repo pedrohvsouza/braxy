@@ -5,17 +5,23 @@ import { activeConversation } from "../../hooks/useRealtime";
 import { t } from "../../i18n";
 import { api, ApiError } from "../../lib/api";
 import {
-  clearUnread, flattenMessages, patchMessage, removeMessage, upsertMessage, useConversation, useMe,
+  clearUnread, flattenMessages, patchMessage, removeMessage, trimMessages, upsertMessage, useBlockedIds, useConversation, useMe,
   useMessages, useSidebar,
 } from "../../lib/queries";
+import { queueRead } from "../../lib/readQueue";
 import type { ChatMessage } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { ChatHeader } from "./ChatHeader";
 import styles from "./Chat.module.css";
 import { Composer, type ComposerHandle } from "./Composer";
 import { MessageBubble } from "./MessageBubble";
+import { useAnnouncer } from "./useAnnouncer";
 
 let tempSeq = 0;
+
+/** History kept in memory (and the DOM) while reading the newest messages. */
+const KEEP_MESSAGES = 150;
+const TRIM_AT = 300;
 const clientId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export function ChatView() {
@@ -44,6 +50,21 @@ function Conversation({ id }: { id: number }) {
   /** Images of optimistic messages, by client id, so a retry skips re-uploading. */
   const uploads = useRef(new Map<string, { file: File; preview: string; key?: string }>());
   const [dragging, setDragging] = useState(false);
+  const announcement = useAnnouncer(messages, me.id);
+  const blockedIds = useBlockedIds();
+  const openModal = useUi((s) => s.openModal);
+  const onModerate = useCallback(
+    (m: ChatMessage) => m.author && openModal({ kind: "moderate", conversationId: id, user: m.author }),
+    [id, openModal],
+  );
+  // A timed mute lifts itself: refetch the detail when it ends.
+  const mutedUntil = convo?.muted_until ?? null;
+  useEffect(() => {
+    if (!mutedUntil || mutedUntil === "forever") return;
+    const ms = new Date(mutedUntil).getTime() - Date.now();
+    const timer = window.setTimeout(() => void qc.invalidateQueries({ queryKey: ["conversation", id] }), Math.max(ms, 0) + 500);
+    return () => window.clearTimeout(timer);
+  }, [mutedUntil, id, qc]);
   const dragDepth = useRef(0);
 
   // Active conversation bookkeeping (used by the realtime handler).
@@ -70,7 +91,7 @@ function Conversation({ id }: { id: number }) {
     const mark = () => {
       if (document.hidden) return;
       clearUnread(qc, id);
-      void api.markRead(id, newestId).catch(() => undefined);
+      queueRead(id, newestId);
     };
     mark();
     document.addEventListener("visibilitychange", mark);
@@ -89,6 +110,12 @@ function Conversation({ id }: { id: number }) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
+
+  // Busy rooms keep appending over the socket: at the bottom, drop the old
+  // history so the list stays small. Scrolling up pages it back in.
+  useEffect(() => {
+    if (messages.length > TRIM_AT && stick.current && !isFetchingNextPage) trimMessages(qc, id, KEEP_MESSAGES);
+  }, [messages.length, isFetchingNextPage, qc, id]);
 
   // The list shrinks when the composer grows (preview, reply bar, long
   // drafts): stay pinned to the bottom if we were there.
@@ -240,7 +267,14 @@ function Conversation({ id }: { id: number }) {
   const other = convo.kind === "dm" ? convo.members.find((m) => m.user.id !== me.id) : undefined;
   const friend = other ? sidebar?.friends.find((f) => f.user.id === other.user.id) : undefined;
   const otherOnline = friend?.online ?? other?.online ?? false;
-  const disabled = convo.kind === "dm" && sidebar && !friend ? t("chat.notFriends") : null;
+  const disabled =
+    convo.kind === "dm" && sidebar && !friend
+      ? t("chat.notFriends")
+      : convo.muted_until === "forever"
+        ? t("mod.youAreMutedForever")
+        : convo.muted_until && new Date(convo.muted_until).getTime() > Date.now()
+          ? t("mod.youAreMuted", { time: new Date(convo.muted_until).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) })
+          : null;
 
   // DM "Visto": my newest message the other side has read.
   let seenId = 0;
@@ -287,6 +321,12 @@ function Conversation({ id }: { id: number }) {
       }}
     >
       {dragging && <div className={styles.dropOverlay}>{t("chat.dropImage")}</div>}
+      <button type="button" className="skip-link" onClick={() => composer.current?.focus()}>
+        {t("chat.skipToComposer")}
+      </button>
+      <div className="sr-only" role="status" aria-live="polite" data-testid="announcer">
+        {announcement}
+      </div>
       <ChatHeader convo={convo} me={me} online={otherOnline} />
       <div className={styles.scroller} ref={scroller} onScroll={onScroll} data-testid="message-list">
         {isLoading && <p className={styles.notice}>{t("common.loading")}</p>}
@@ -298,6 +338,8 @@ function Conversation({ id }: { id: number }) {
             message={m}
             me={me}
             canModerate={convo.can_moderate}
+            blocked={Boolean(m.author && blockedIds.has(m.author.id))}
+            onModerate={onModerate}
             seen={m.id === seenId}
             onReply={(msg) => {
               setEditing(null);

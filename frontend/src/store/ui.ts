@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppNotification } from "../lib/types";
+import type { AppNotification, UserSummary } from "../lib/types";
 
 export interface Toast {
   id: number;
@@ -13,6 +13,7 @@ type Modal =
   | { kind: "createGroup" }
   | { kind: "groupInfo"; conversationId: number }
   | { kind: "requests" }
+  | { kind: "moderate"; conversationId: number; user: UserSummary }
   | null;
 
 function loadSound(): boolean {

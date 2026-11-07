@@ -34,6 +34,18 @@ export interface Profile extends UserSummary {
   online: boolean;
   joined_at: string;
   friendship: FriendshipState | null;
+  achievements: { key: string; unlocked_at: string | null }[];
+  /** I blocked this user. */
+  blocked: boolean;
+}
+
+export type SanctionKind = "mute" | "ban";
+
+export interface Sanction {
+  user: UserSummary;
+  kind: SanctionKind;
+  expires_at: string | null;
+  moderator: UserSummary | null;
 }
 
 export interface Preview {
@@ -74,6 +86,11 @@ export interface Member {
   last_read_message_id: number;
 }
 
+export interface MembersPage {
+  members: Member[];
+  next_cursor: number | null;
+}
+
 export interface ConversationDetail {
   id: number;
   kind: "lobby" | "group" | "dm";
@@ -82,6 +99,8 @@ export interface ConversationDetail {
   owner_id: number | null;
   can_manage: boolean;
   can_moderate: boolean;
+  /** My own mute here: an ISO time, "forever", or null. */
+  muted_until: string | null;
   member_count: number;
   members: Member[];
 }
@@ -127,6 +146,7 @@ export type NotificationKind =
   | "mention"
   | "reply"
   | "level_up"
+  | "achievement"
   | "group_added";
 
 export interface AppNotification {

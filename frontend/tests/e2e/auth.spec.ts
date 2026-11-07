@@ -39,3 +39,24 @@ test("logout returns to the auth card", async ({ page }) => {
   await page.getByRole("menuitem", { name: "Sair" }).click();
   await expect(page.getByRole("heading", { name: "Entrar no Braxy" })).toBeVisible();
 });
+
+test("forgot password asks for the email and answers the same for any address", async ({ page }) => {
+  // The request is rate limited per address (5 per 15 min); the API itself is
+  // covered by the backend spec, so the UI gets a canned answer here.
+  await page.route("**/api/password_resets", (route) => route.fulfill({ json: { ok: true } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Esqueceu sua senha?" }).click();
+  const form = page.getByTestId("forgot-form");
+  await form.getByPlaceholder("E-mail").fill("ninguem@e2e.local");
+  await form.getByRole("button", { name: "Enviar link" }).click();
+  await expect(form).toContainText("Se existir uma conta com esse e-mail");
+  await form.getByRole("button", { name: "Voltar para o login" }).click();
+  await expect(page.getByTestId("signin-form")).toBeVisible();
+});
+
+test("a bad reset link explains itself and leads back to sign in", async ({ page }) => {
+  await page.goto("/reset-password?token=nao-existe");
+  await expect(page.getByTestId("reset-page")).toContainText("Link inválido ou expirado");
+  await page.getByRole("button", { name: "Voltar para o login" }).click();
+  await expect(page.getByTestId("signin-form")).toBeVisible();
+});

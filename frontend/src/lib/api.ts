@@ -1,19 +1,26 @@
 // REST client. Same-origin (Vite proxy in dev), so the HttpOnly session
 // cookie is automatic; every mutation echoes the `saci_csrf` cookie.
 import type {
-  ChatMessage, ConversationDetail, FriendRequest, FriendshipState, Me, MessagesPage,
+  ChatMessage, ConversationDetail, FriendRequest, FriendshipState, Me, MembersPage, MessagesPage, Sanction, SanctionKind, UserSummary,
   NotificationsData, Profile, SearchResult, SidebarData, Stats,
 } from "./types";
 
 export class ApiError extends Error {
   status: number;
   errors: string[];
+  /** The backend is down or still starting (not a real API error). */
+  unavailable: boolean;
 
-  constructor(status: number, errors: string[]) {
+  constructor(status: number, errors: string[], unavailable = false) {
     super(errors[0] ?? `HTTP ${status}`);
     this.status = status;
     this.errors = errors;
+    this.unavailable = unavailable;
   }
+}
+
+export function isUnavailable(err: unknown): boolean {
+  return err instanceof ApiError && err.unavailable;
 }
 
 function csrfToken(): string {
@@ -36,7 +43,7 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, ["Sem conexão com o servidor"]);
+    throw new ApiError(0, ["Sem conexão com o servidor"], true);
   }
 
   const text = await res.text();
@@ -48,6 +55,11 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
   }
 
   if (!res.ok) {
+    // Gateway errors, or the empty 500 the dev proxy answers while the
+    // backend is still compiling and not listening yet.
+    if ([502, 503, 504].includes(res.status) || (res.status === 500 && !text)) {
+      throw new ApiError(res.status, ["Servidor indisponível"], true);
+    }
     const obj = (data ?? {}) as { error?: string; errors?: string[] };
     // A rotated CSRF cookie is recoverable once: refresh it and retry.
     if (res.status === 403 && obj.error === "token CSRF inválido" && !retried) {
@@ -77,6 +89,9 @@ export const api = {
   signup: (data: { name: string; username: string; email: string; password: string }) =>
     post<{ user: Me }>("/api/signup", data),
   logout: () => del<{ ok: boolean }>("/api/session"),
+  requestPasswordReset: (email: string) => post<{ ok: boolean }>("/api/password_resets", { email }),
+  verifyResetToken: (token: string) => post<{ valid: boolean }>("/api/password_resets/verify", { token }),
+  resetPassword: (token: string, password: string) => patch<{ user: Me }>("/api/password_resets", { token, password }),
 
   updateProfile: (data: { name?: string; bio?: string; birthday?: string }) => patch<{ user: Me }>("/api/me", data),
   changePassword: (current_password: string, password: string) =>
@@ -85,6 +100,15 @@ export const api = {
 
   searchUsers: (q: string) => get<{ users: SearchResult[] }>(`/api/users?q=${encodeURIComponent(q)}`),
   profile: (username: string) => get<{ user: Profile }>(`/api/users/${encodeURIComponent(username)}`),
+
+  blocks: () => get<{ users: UserSummary[] }>("/api/blocks"),
+  block: (user_id: number) => post<{ ok: boolean }>("/api/blocks", { user_id }),
+  unblock: (user_id: number) => del<{ ok: boolean }>(`/api/blocks/${user_id}`),
+  sanctions: (id: number) => get<{ sanctions: Sanction[] }>(`/api/conversations/${id}/sanctions`),
+  sanction: (id: number, user_id: number, kind: SanctionKind, minutes?: number) =>
+    post<{ ok: boolean }>(`/api/conversations/${id}/sanctions`, { user_id, kind, minutes }),
+  liftSanction: (id: number, user_id: number, kind: SanctionKind) =>
+    del<{ ok: boolean }>(`/api/conversations/${id}/sanctions/${user_id}?kind=${kind}`),
 
   friendships: () => get<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>("/api/friendships"),
   requestFriend: (user_id: number) => post<{ friendship: FriendshipState }>("/api/friendships", { user_id }),
@@ -101,6 +125,13 @@ export const api = {
     post<{ conversation: ConversationDetail }>(`/api/conversations/${id}/avatar`, fileForm(file)),
   addMembers: (id: number, user_ids: number[]) =>
     post<{ conversation: ConversationDetail }>(`/api/conversations/${id}/members`, { user_ids }),
+  members: (id: number, opts: { q?: string; cursor?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.q) qs.set("q", opts.q);
+    if (opts.cursor) qs.set("cursor", String(opts.cursor));
+    const s = qs.toString();
+    return get<MembersPage>(`/api/conversations/${id}/members${s ? `?${s}` : ""}`);
+  },
   removeMember: (id: number, user_id: number) => del<{ ok: boolean }>(`/api/conversations/${id}/members/${user_id}`),
   markRead: (id: number, message_id: number) => post<{ ok: boolean }>(`/api/conversations/${id}/read`, { message_id }),
 
@@ -120,4 +151,8 @@ export const api = {
   readAllNotifications: () => post<{ unread_count: number }>("/api/notifications/read_all"),
 
   stats: () => get<{ stats: Stats }>("/api/stats"),
+
+  pushKey: () => get<{ key: string | null }>("/api/push/key"),
+  pushSubscribe: (sub: { endpoint: string; keys: Record<string, string> }) => post<{ ok: boolean }>("/api/push/subscriptions", sub),
+  pushUnsubscribe: (endpoint: string) => request<{ ok: boolean }>("DELETE", "/api/push/subscriptions", { endpoint }),
 };

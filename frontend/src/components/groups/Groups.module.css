@@ -116,3 +116,35 @@
   color: var(--yellow);
   font-size: 0.8rem;
 }
+
+.memberSearch {
+  position: relative;
+  display: block;
+}
+
+.memberSearch svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+
+.memberSearch input {
+  width: 100%;
+  padding-left: 36px;
+}
+
+.memberNote {
+  margin: 8px 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.sentinel {
+  height: 1px;
+  flex: none;
+}

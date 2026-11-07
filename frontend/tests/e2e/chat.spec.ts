@@ -16,8 +16,8 @@ test("lobby: send, reply, react, edit and delete", async ({ page }) => {
 
   await mine.hover();
   await mine.getByRole("button", { name: "Reagir" }).click();
-  await mine.getByRole("button", { name: "🔥" }).click();
-  await expect(mine.getByRole("button", { name: "🔥 1" })).toBeVisible();
+  await mine.getByRole("menuitem", { name: "Fogo" }).click();
+  await expect(mine.getByRole("button", { name: "Fogo: 1" })).toBeVisible();
 
   await mine.hover();
   await mine.getByRole("button", { name: "Responder" }).click();
@@ -60,7 +60,9 @@ test("markdown and emoji picker", async ({ page }) => {
   const tag = unique("md");
   await box.fill(`**${tag}** _ok_ \`code\` `);
   await page.getByRole("button", { name: "Emojis" }).click();
-  await page.getByTestId("emoji-picker").getByRole("button", { name: "😎" }).click();
+  const picker = page.getByTestId("emoji-picker");
+  await picker.getByRole("searchbox").fill("oculos escuros");
+  await picker.getByRole("button", { name: "rosto sorridente com óculos escuros" }).click();
   await box.press("Enter");
   const sent = page.getByTestId("message").filter({ hasText: tag });
   await expect(sent.locator("strong")).toHaveText(tag);

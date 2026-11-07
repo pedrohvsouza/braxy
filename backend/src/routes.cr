@@ -19,6 +19,9 @@ module BraxyRoutes
       r.post "/api/session", Api::SessionsController, :create
       r.delete "/api/session", Api::SessionsController, :destroy
       r.post "/api/signup", Api::RegistrationsController, :create
+      r.post "/api/password_resets", Api::PasswordResetsController, :create
+      r.post "/api/password_resets/verify", Api::PasswordResetsController, :verify
+      r.patch "/api/password_resets", Api::PasswordResetsController, :update
 
       r.patch "/api/me", Api::ProfilesController, :update
       r.patch "/api/me/password", Api::ProfilesController, :password
@@ -26,6 +29,10 @@ module BraxyRoutes
 
       r.get "/api/users", Api::UsersController, :index
       r.get "/api/users/:username", Api::UsersController, :show
+
+      r.get "/api/blocks", Api::BlocksController, :index
+      r.post "/api/blocks", Api::BlocksController, :create
+      r.delete "/api/blocks/:user_id", Api::BlocksController, :destroy
 
       r.get "/api/friendships", Api::FriendshipsController, :index
       r.post "/api/friendships", Api::FriendshipsController, :create
@@ -38,9 +45,13 @@ module BraxyRoutes
       r.get "/api/conversations/:id", Api::ConversationsController, :show
       r.patch "/api/conversations/:id", Api::ConversationsController, :update
       r.post "/api/conversations/:id/avatar", Api::ConversationsController, :avatar
+      r.get "/api/conversations/:id/members", Api::ConversationsController, :members
       r.post "/api/conversations/:id/members", Api::ConversationsController, :add_members
       r.delete "/api/conversations/:id/members/:user_id", Api::ConversationsController, :remove_member
       r.post "/api/conversations/:id/read", Api::ConversationsController, :read
+      r.get "/api/conversations/:id/sanctions", Api::SanctionsController, :index
+      r.post "/api/conversations/:id/sanctions", Api::SanctionsController, :create
+      r.delete "/api/conversations/:id/sanctions/:user_id", Api::SanctionsController, :destroy
 
       r.get "/api/conversations/:id/messages", Api::MessagesController, :index
       r.post "/api/conversations/:id/messages", Api::MessagesController, :create
@@ -56,6 +67,11 @@ module BraxyRoutes
       r.post "/api/notifications/:id/read", Api::NotificationsController, :read
 
       r.get "/api/stats", Api::StatsController, :show
+
+      r.get "/api/push/key", Api::PushController, :key
+      r.post "/api/push/subscriptions", Api::PushController, :subscribe
+      r.delete "/api/push/subscriptions", Api::PushController, :unsubscribe
+      r.get "/api/push/latest", Api::PushController, :latest
 
       r.cable "/cable", ChatChannel
     end

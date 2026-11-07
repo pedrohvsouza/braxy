@@ -15,7 +15,12 @@ class ApplicationController < Saci::Controller
     return @current_user if @current_user_loaded
     @current_user_loaded = true
     # Shared, read-only object: actions that modify the user call `fresh_me`.
-    @current_user = session.int(Saci::Auth.session_key).try { |id| UserCache.fetch(id) }
+    user = session.int(Saci::Auth.session_key).try { |id| UserCache.fetch(id) }
+    # A rotated token (password reset or change) ends older sessions.
+    if user && (token = user.session_token) && session.string(Saci::Auth.token_key) != token
+      user = nil
+    end
+    @current_user = user
   end
 
   private def me : User

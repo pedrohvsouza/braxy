@@ -33,8 +33,8 @@ class Browser
     request("PATCH", path, body)
   end
 
-  def delete(path : String) : HTTP::Client::Response
-    request("DELETE", path)
+  def delete(path : String, body = nil) : HTTP::Client::Response
+    request("DELETE", path, body)
   end
 
   def upload(path : String, bytes : Bytes, filename : String = "img.png", mime : String = "image/png") : HTTP::Client::Response
@@ -131,6 +131,7 @@ def with_app(&)
   KV.reset!
   UserCache.clear!
   Access.clear!
+  Moderation.clear!
   MessagePageCache.clear!
   SidebarCache.clear!
   Uploads.clear_cache!
