@@ -33,9 +33,24 @@ module Xp
   # parallel sends — on any process — cannot both pay, and no database
   # write happens for the posts in between. Returns the XP to award (0
   # while cooling down); the batch writer persists it.
+  # Local memo of users known to be cooling down: their posts skip the Redis
+  # round trip entirely (Redis stays the cross-process authority).
+  @@cooling = {} of Int64 => Time::Instant
+  @@cooling_mutex = Mutex.new
+
   def self.claim_message_xp(user : User, conversation : Conversation) : Int32
-    return 0 unless KV.backend.set("braxy:msgxp:#{user.uid}", "1", ttl: MESSAGE_COOLDOWN, nx: true)
-    conversation.dm? ? DM_MESSAGE : GROUP_MESSAGE
+    now = Time.instant
+    if until_ = @@cooling_mutex.synchronize { @@cooling[user.uid]? }
+      return 0 if now < until_
+    end
+    claimed = KV.backend.set("braxy:msgxp:#{user.uid}", "1", ttl: MESSAGE_COOLDOWN, nx: true)
+    # Either we just started the cooldown or another process did: in both
+    # cases this user cannot earn message XP for (at most) MESSAGE_COOLDOWN.
+    @@cooling_mutex.synchronize do
+      @@cooling.clear if @@cooling.size > 200_000
+      @@cooling[user.uid] = now + (claimed ? MESSAGE_COOLDOWN : 1.second)
+    end
+    claimed ? (conversation.dm? ? DM_MESSAGE : GROUP_MESSAGE) : 0
   end
 
   # The Redis guard makes every request after the first of the day free
@@ -71,15 +86,19 @@ module Xp
   end
 
   def self.reset_memo! : Nil
+    @@cooling_mutex.synchronize { @@cooling.clear }
     @@daily_mutex.synchronize { @@daily_seen.clear }
   end
 
   # Recomputes the stored level, notifies on level-up and pushes the new
   # progress to the user's own sockets.
+  # XP changes are frequent (every active user, every few seconds), so they
+  # do not invalidate other processes' user caches: this process caches the
+  # fresh row, and clients learn the new XP from the `xp.updated` event.
   def self.after_change(user_id : Int64) : Nil
-    Invalidation.user(user_id)
     user = User.find_by(id: user_id)
     return if user.nil?
+    UserCache.put(user)
     progress = Levels.progress(user.xp_total)
     old_level = user.level || 1
     if progress[:level] != old_level

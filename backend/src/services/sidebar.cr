@@ -2,14 +2,25 @@
 # then accepted friends (with their DM conversation when one exists).
 # Each list is ordered by latest activity. Constant number of queries.
 module Sidebar
+  # The UI shows "99+" past 99, so each count stops at UNREAD_CAP rows: a
+  # bounded index range scan per conversation, however big the room is.
+  UNREAD_CAP = 100
+
   def self.unread_counts(user_id : Int64) : Hash(Int64, Int64)
     result = {} of Int64 => Int64
     sql = <<-SQL
-      SELECT m.conversation_id, COUNT(*)
-      FROM messages m
-      JOIN memberships mb ON mb.conversation_id = m.conversation_id AND mb.user_id = ?
-      WHERE m.id > mb.last_read_message_id AND m.author_id <> ? AND m.deleted_at IS NULL
-      GROUP BY m.conversation_id
+      SELECT mb.conversation_id, u.n
+      FROM memberships mb
+      CROSS JOIN LATERAL (
+        SELECT COUNT(*) AS n FROM (
+          SELECT 1 FROM messages m
+          WHERE m.conversation_id = mb.conversation_id AND m.id > mb.last_read_message_id
+            AND m.author_id <> ? AND m.deleted_at IS NULL
+          ORDER BY m.id
+          LIMIT #{UNREAD_CAP}
+        ) capped
+      ) u
+      WHERE mb.user_id = ? AND u.n > 0
       SQL
     Saci::Record.query_compat(Saci::Record.connection, sql, [user_id, user_id] of Saci::Record::Value) do |rs|
       rs.each do

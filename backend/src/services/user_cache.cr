@@ -29,6 +29,11 @@ module UserCache
     user
   end
 
+  # Replaces this process's entry with an already loaded fresh row.
+  def self.put(user : User) : Nil
+    @@mutex.synchronize { @@entries[user.uid] = {user, Time.instant} }
+  end
+
   def self.invalidate(id : Int64?) : Nil
     return if id.nil?
     @@mutex.synchronize { @@entries.delete(id) }

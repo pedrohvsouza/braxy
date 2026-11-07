@@ -48,8 +48,7 @@ module Messaging
     ctx = Message::Context.new(authors, replies, {} of Int64 => Array(Message::ReactionSummary))
     payload = message.wire_json(ctx)
     message.wire = payload.to_json
-    MessagePageCache.bump(convo.cid)
-    Realtime.to_conversation(convo.cid, {type: "message.created", message: payload})
+    Realtime.to_conversation(convo.cid, {type: "message.created", message: RawJSON.new(message.wire.not_nil!)})
     notify_mentions_and_reply(author, convo, message, ctx) if convo.group_like?
     Xp.after_change(author.uid) if job.xp_paid
     Stats.bump("messages")

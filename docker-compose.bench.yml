@@ -39,6 +39,8 @@ services:
     command: ["sh", "-c", "exec ${BENCH_CMD:-./tmp/bench-backend}"]
     ulimits:
       nofile: { soft: 200000, hard: 200000 }
+    # Lets gdb attach inside the container to diagnose hangs (bench only).
+    cap_add: [SYS_PTRACE]
     healthcheck:
       start_period: 600s
 

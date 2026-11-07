@@ -15,6 +15,13 @@ require "random/secure"
 # load a batch is a single message and nothing waits for company.
 module MessageWriter
   MAX_BATCH = 256
+  # Fuller batches mean fewer commits per message. After draining what is
+  # queued, keep collecting only while posts keep arriving (each wait is at
+  # most IDLE_GAP, the whole batch at most LINGER): a burst that has fully
+  # arrived is written at once.
+  MIN_FILL = 64
+  IDLE_GAP = 200.microseconds
+  LINGER   = 1.millisecond
 
   class Job
     getter message : Message
@@ -48,17 +55,30 @@ module MessageWriter
     spawn(name: "braxy-message-writer") do
       loop do
         batch = [@@queue.receive]
+        deadline = Time.instant + LINGER
         while batch.size < MAX_BATCH
           select
           when job = @@queue.receive
             batch << job
           else
-            break
+            break if batch.size >= MIN_FILL || Saci.env == "test"
+            remaining = deadline - Time.instant
+            break if remaining <= Time::Span.zero
+            select
+            when job = @@queue.receive
+              batch << job
+            when timeout({remaining, IDLE_GAP}.min)
+              break
+            end
           end
         end
         failure = nil.as(Exception?)
         begin
           write_batch(batch)
+          # One cache-version bump per conversation per batch.
+          batch.compact_map { |job| job.created ? job.message.conversation_id : nil }.uniq.each do |cid|
+            MessagePageCache.bump(cid)
+          end
         rescue ex
           failure = ex
         end
@@ -154,8 +174,10 @@ module MessageWriter
     end
   end
 
+  # Only has to be unique per author within the unique index, not secret:
+  # the fast PRNG avoids a getrandom syscall per post.
   def self.new_client_id : String
-    "srv-" + Random::Secure.hex(12)
+    "srv-#{Random.rand(UInt64::MAX).to_s(36)}#{Random.rand(UInt32::MAX).to_s(36)}"
   end
 end
 
