@@ -105,45 +105,55 @@ module MessageWriter
     end
   end
 
-  private def self.placeholders(rows : Int32, cols : Int32) : String
-    row = "(" + (["?"] * cols).join(", ") + ")"
-    ([row] * rows).join(", ")
-  end
+  alias BatchArg = Array(Int64) | Array(Int64?) | Array(String) | Array(String?) | Time
 
   # The whole batch is ONE statement in autocommit: the message INSERT and,
   # through data-modifying CTEs, the XP events and user totals for the rows
   # that were really inserted. One round trip instead of BEGIN / INSERT /
   # INSERT / UPDATE / COMMIT, so the connection never sits "idle in
   # transaction" while this fiber waits for its turn on the scheduler.
+  #
+  # Rows travel as one array parameter per column (unnest), so the SQL text
+  # is the same for every batch size: two prepared statements in all,
+  # instead of one per size, each with 8 parameters to bind rather than 8
+  # per row.
+  INSERT_SQL = "WITH v AS (SELECT * FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::bigint[], $6::text[]) " \
+               "WITH ORDINALITY AS t(conversation_id, author_id, body, image_key, reply_to_id, client_id, ord)), " \
+               "ins AS (INSERT INTO messages (conversation_id, author_id, body, image_key, reply_to_id, client_id, created_at, updated_at) " \
+               "SELECT conversation_id, author_id, body, image_key, reply_to_id, client_id, $7::timestamp, $7::timestamp FROM v ORDER BY ord " \
+               "ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id, client_id, created_at)"
+  XP_SQL = ", xp AS (SELECT * FROM unnest($8::bigint[], $9::text[], $10::bigint[]) AS x(uid, cid, amt)), " \
+           "xpe AS (INSERT INTO xp_events (user_id, kind, amount, source_key, created_at, updated_at) " \
+           "SELECT ins.author_id, 'message', xp.amt, 'message:' || ins.id, ins.created_at, ins.created_at " \
+           "FROM xp JOIN ins ON ins.author_id = xp.uid AND ins.client_id = xp.cid " \
+           "ON CONFLICT (user_id, kind, source_key) DO NOTHING RETURNING user_id, amount), " \
+           "upd AS (UPDATE users AS u SET xp = u.xp + t.amt FROM " \
+           "(SELECT user_id, sum(amount)::bigint AS amt FROM xpe GROUP BY user_id) AS t WHERE u.id = t.user_id)"
+  SELECT_SQL       = " SELECT id, author_id, client_id, created_at FROM ins"
+  BATCH_SQL        = INSERT_SQL + SELECT_SQL
+  BATCH_PAYING_SQL = INSERT_SQL + XP_SQL + SELECT_SQL
+
   private def self.write_batch(batch : Array(Job)) : Nil
     now = Time.utc
-    args = [] of Saci::Record::Value
-    batch.each do |job|
-      m = job.message
-      args.push(m.conversation_id, m.author_id, m.body, m.image_key, m.reply_to_id, m.client_id, now, now)
-    end
+    msgs = batch.map(&.message)
+    args = [
+      msgs.map(&.conversation_id.not_nil!), msgs.map(&.author_id.not_nil!),
+      msgs.map(&.body), msgs.map(&.image_key), msgs.map(&.reply_to_id),
+      msgs.map(&.client_id.not_nil!), now,
+    ] of BatchArg
     paying = batch.select { |job| job.xp > 0 }
-    sql = String.build do |io|
-      io << "WITH ins AS (INSERT INTO messages (conversation_id, author_id, body, image_key, reply_to_id, client_id, created_at, updated_at) "
-      io << "VALUES " << placeholders(batch.size, 8)
-      io << " ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id, client_id, created_at)"
-      unless paying.empty?
-        paying.each { |job| args.push(job.message.author_id, job.message.client_id, job.xp.to_i64) }
-        io << ", xp(uid, cid, amt) AS (VALUES " << placeholders(paying.size, 3) << ")"
-        io << ", xpe AS (INSERT INTO xp_events (user_id, kind, amount, source_key, created_at, updated_at) "
-        io << "SELECT ins.author_id, 'message', xp.amt::bigint, 'message:' || ins.id, ins.created_at, ins.created_at "
-        io << "FROM xp JOIN ins ON ins.author_id = xp.uid::bigint AND ins.client_id = xp.cid::text "
-        io << "ON CONFLICT (user_id, kind, source_key) DO NOTHING RETURNING user_id, amount)"
-        io << ", upd AS (UPDATE users AS u SET xp = u.xp + t.amt FROM "
-        io << "(SELECT user_id, sum(amount)::bigint AS amt FROM xpe GROUP BY user_id) AS t WHERE u.id = t.user_id)"
-      end
-      io << " SELECT id, author_id, client_id, created_at FROM ins"
+    sql = BATCH_SQL
+    unless paying.empty?
+      sql = BATCH_PAYING_SQL
+      args << paying.map(&.message.author_id.not_nil!)
+      args << paying.map(&.message.client_id.not_nil!)
+      args << paying.map(&.xp.to_i64)
     end
 
     inserted = {} of {Int64, String} => {Int64, Time}
     db = Saci::Record.connection.as(DB::Database)
     db.using_connection do |conn|
-      Saci::Record.query_compat(conn, sql, args) do |rs|
+      conn.query(sql, args: args) do |rs|
         rs.each do
           id = rs.read(Int64)
           author = rs.read(Int64)

@@ -30,6 +30,30 @@ describe MessageWriter do
       Message.where(conversation_id: lobby.cid).count.should eq(40)
     end
   end
+
+  it "stores bodies verbatim through the array encoding, with replies and XP" do
+    with_app do |_app|
+      ann = Fixtures.user("ann")
+      lobby = Conversation.lobby
+      Membership.ensure!(lobby.cid, ann.uid)
+      xp_before = User.find_by(id: ann.uid).not_nil!.xp || 0_i64
+      tricky = [%(aspas "duplas" e \\ barra), "{chaves,vírgulas}", "NULL", "emoji 🔥 e acentuação", "linha\nnova\ttab"]
+      posted = tricky.map_with_index do |body, i|
+        m, created = Messaging.post(ann, lobby, body, nil, nil, "tricky-#{i}")
+        created.should be_true
+        m
+      end
+      reply, _ = Messaging.post(ann, lobby, "resposta", nil, posted[0].mid, "tricky-reply")
+      tricky.each_with_index do |body, i|
+        stored = Message.find_by(id: posted[i].mid).not_nil!
+        stored.body.should eq(body)
+        stored.image_key.should be_nil
+        stored.reply_to_id.should be_nil
+      end
+      Message.find_by(id: reply.mid).not_nil!.reply_to_id.should eq(posted[0].mid)
+      (User.find_by(id: ann.uid).not_nil!.xp || 0_i64).should be > xp_before
+    end
+  end
 end
 
 describe MessagePageCache do
