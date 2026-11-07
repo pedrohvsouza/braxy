@@ -6,9 +6,10 @@ module Api
 
     def index
       users = User.search(params["q"]? || "", me.uid)
+      online = Presence.online_ids(users.map(&.uid))
       render json: {
         users: users.map { |u|
-          {user: u.summary_json, online: u.online?, friendship: Friendship.status_json(me.uid, u.uid)}
+          {user: u.summary_json, online: online.includes?(u.uid), friendship: Friendship.status_json(me.uid, u.uid)}
         },
       }
     end

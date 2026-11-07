@@ -55,6 +55,7 @@ module Sidebar
     end
 
     authors = User.by_ids(lasts.values.compact_map(&.author_id) + friend_ids)
+    online = Presence.online_ids(friend_ids)
 
     groups = convos.select(&.group_like?).map { |c|
       {
@@ -74,7 +75,7 @@ module Sidebar
       dm = dms[fid]?
       {
         user:            friend.summary_json,
-        online:          friend.online?,
+        online:          online.includes?(fid),
         conversation_id: dm.try(&.id),
         unread:          dm ? (unread[dm.cid]? || 0_i64) : 0_i64,
         last_message:    dm ? preview_json(lasts[dm.cid]?, authors, uid) : nil,

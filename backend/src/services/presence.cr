@@ -1,53 +1,74 @@
-# Online/offline presence.
+# Online/offline presence, kept entirely in Redis (no database writes on
+# connect, heartbeat or disconnect).
 #
-# * A per-user socket counter lives in the cache store (Redis in dev/prod),
-#   so the last tab closing — on any replica — flips the user offline.
-# * `users.last_seen_at` is refreshed on connect and every heartbeat; a user
-#   is online while it is younger than WINDOW. That also self-heals a crashed
-#   process that never decremented its counter.
+# * `braxy:online` is a sorted set: member = user id, score = last signal
+#   (unix seconds). A user is online while that score is within WINDOW, so a
+#   crashed process that never said goodbye self-heals.
+# * `braxy:conns:<id>` counts the user's open sockets across tabs and
+#   processes; the last one closing flips the user offline immediately.
 module Presence
-  WINDOW          = 75.seconds
-  TOUCH_THROTTLE  = 20.seconds
-  OFFLINE_SENTINEL = Time.utc(2000, 1, 1)
+  WINDOW     = 75.seconds
+  ONLINE_KEY = "braxy:online"
 
-  def self.counter_key(user_id : Int64) : String
-    "braxy:presence:#{user_id}"
+  def self.conns_key(user_id : Int64) : String
+    "braxy:conns:#{user_id}"
   end
 
-  def self.online?(last_seen_at : Time?) : Bool
-    !last_seen_at.nil? && last_seen_at > Time.utc - WINDOW
+  private def self.now : Int64
+    Time.utc.to_unix
+  end
+
+  private def self.cutoff : Int64
+    now - WINDOW.total_seconds.to_i64
+  end
+
+  def self.online?(user_id : Int64) : Bool
+    online_ids([user_id]).includes?(user_id)
+  end
+
+  # One round trip for any number of users.
+  def self.online_ids(user_ids : Enumerable(Int64)) : Set(Int64)
+    ids = user_ids.to_a.uniq
+    result = Set(Int64).new
+    return result if ids.empty?
+    min = cutoff
+    KV.backend.zscores(ONLINE_KEY, ids.map(&.to_s)).each_with_index do |score, i|
+      result << ids[i] if score && score >= min
+    end
+    result
+  end
+
+  def self.online_count : Int64
+    KV.backend.zcount(ONLINE_KEY, cutoff)
   end
 
   def self.connected(user : User) : Nil
-    count = Saci::Cache.increment(counter_key(user.uid))
-    was_online = online?(user.last_seen_at)
-    touch!(user, force: true)
-    broadcast(user, true) if count == 1 || !was_online
-    Stats.touch!
+    was_online = online?(user.uid)
+    KV.backend.incr(conns_key(user.uid))
+    KV.backend.zadd(ONLINE_KEY, now, user.uid.to_s)
+    unless was_online
+      broadcast(user, true)
+      Stats.touch!
+    end
   end
 
   def self.heartbeat(user : User) : Nil
-    touch!(user)
+    KV.backend.zadd(ONLINE_KEY, now, user.uid.to_s)
   end
 
   def self.disconnected(user : User) : Nil
-    count = Saci::Cache.decrement(counter_key(user.uid))
+    count = KV.backend.incr(conns_key(user.uid), -1)
     return if count > 0
-    Saci::Cache.delete(counter_key(user.uid))
-    user.update_columns(last_seen_at: Time.utc - WINDOW - 1.second)
+    KV.backend.del(conns_key(user.uid))
+    KV.backend.zrem(ONLINE_KEY, user.uid.to_s)
     broadcast(user, false)
     Stats.touch!
   end
 
-  def self.online_count : Int64
-    User.where("last_seen_at > ?", Time.utc - WINDOW).count
-  end
-
-  private def self.touch!(user : User, force : Bool = false) : Nil
-    now = Time.utc
-    last = user.last_seen_at
-    return if !force && last && last > now - TOUCH_THROTTLE
-    user.update_columns(last_seen_at: now)
+  # Drops members whose last signal is older than WINDOW (called by the
+  # stats leader so the set does not grow with long-gone users).
+  def self.prune : Nil
+    KV.backend.zremrangebyscore(ONLINE_KEY, cutoff)
   end
 
   # Friends see the dot change in their sidebar.

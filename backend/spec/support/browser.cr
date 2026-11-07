@@ -128,6 +128,7 @@ end
 def with_app(&)
   Saci::Record.clean_database!
   Saci::Cache.clear rescue nil
+  KV.reset!
   Saci::TestSession.serve(BraxyRoutes.build) { |app| yield app }
 end
 

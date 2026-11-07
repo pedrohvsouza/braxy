@@ -48,7 +48,7 @@ class User < ApplicationRecord
   end
 
   def online? : Bool
-    Presence.online?(last_seen_at)
+    Presence.online?(uid)
   end
 
   # Compact shape embedded in messages, sidebar rows and member lists.

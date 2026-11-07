@@ -100,6 +100,7 @@ class Conversation < ApplicationRecord
   def detail_json(viewer : User)
     members = Membership.where(conversation_id: cid).to_a
     users = User.by_ids(members.compact_map(&.user_id))
+    online = Presence.online_ids(users.keys)
     {
       id:         id,
       kind:       kind,
@@ -111,7 +112,7 @@ class Conversation < ApplicationRecord
       member_count: members.size,
       members:    members.compact_map { |m|
         users[m.user_id]?.try { |u|
-          {user: u.summary_json, role: m.role, online: u.online?, last_read_message_id: m.last_read_message_id}
+          {user: u.summary_json, role: m.role, online: online.includes?(u.uid), last_read_message_id: m.last_read_message_id}
         }
       },
     }
