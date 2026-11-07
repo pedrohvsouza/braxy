@@ -18,6 +18,9 @@ module BraxyRoutes
       r.post "/api/session", Api::SessionsController, :create
       r.delete "/api/session", Api::SessionsController, :destroy
       r.post "/api/signup", Api::RegistrationsController, :create
+      r.post "/api/password_resets", Api::PasswordResetsController, :create
+      r.post "/api/password_resets/verify", Api::PasswordResetsController, :verify
+      r.patch "/api/password_resets", Api::PasswordResetsController, :update
 
       r.patch "/api/me", Api::ProfilesController, :update
       r.patch "/api/me/password", Api::ProfilesController, :password
