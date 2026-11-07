@@ -14,40 +14,44 @@ module Messaging
 
   def self.post(author : User, convo : Conversation, body : String?, image_key : String?,
                 reply_to_id : Int64?, client_id : String?) : {Message, Bool}
-    # Idempotent retries: the same client_id returns the original message.
-    if cid = client_id.try(&.strip).presence
-      if existing = Message.find_by(author_id: author.uid, client_id: cid)
-        return {existing, false}
-      end
-    end
-
+    parent = nil.as(Message?)
     if rid = reply_to_id
       parent = Message.find_by(id: rid)
       raise Invalid.new(["mensagem respondida não existe"]) if parent.nil? || parent.conversation_id != convo.cid
     end
 
+    # Every row gets a client_id so the batch writer can map rows back to
+    # requests; a client-sent one also makes retries idempotent.
     message = Message.new(
       conversation_id: convo.cid, author_id: author.uid, body: body,
-      image_key: image_key.try(&.presence), reply_to_id: reply_to_id, client_id: client_id,
+      image_key: image_key.try(&.presence), reply_to_id: reply_to_id,
+      client_id: client_id.try(&.strip).presence || MessageWriter.new_client_id,
     )
     raise Invalid.new(message.errors.full_messages) unless message.valid?
 
-    # One transaction = one commit (one fsync) for all four writes.
-    paid = false
-    Saci::Record.transaction do |_tx|
-      raise Invalid.new(message.errors.full_messages) unless message.save
-      at = message.created_at || Time.utc
-      Conversation.where(id: convo.cid).update_all(last_message_id: message.mid, last_message_at: at)
-      # The author has obviously read up to their own message.
-      Membership.where(conversation_id: convo.cid, user_id: author.uid).update_all(last_read_message_id: message.mid)
-      paid = Xp.for_message(author, message, convo, notify: false)
+    # Group commit: this request's insert, the conversation/read-cursor
+    # updates and the XP award share one transaction with concurrent posts.
+    job = MessageWriter.write(message, Xp.claim_message_xp(author, convo))
+    unless job.created
+      # Retry of an already stored message: return the original.
+      return {Message.find_by(id: message.id) || message, false}
     end
 
-    # Side effects only after commit.
-    ctx = Message::Context.for([message])
-    Realtime.to_conversation(convo.cid, {type: "message.created", message: message.wire_json(ctx)})
+    # Side effects only after commit. The context is built from what is in
+    # memory: a new message has no reactions and its author is `author`.
+    authors = {author.uid => author}
+    replies = {} of Int64 => Message
+    if p = parent
+      replies[p.mid] = p
+      User.by_ids([p.author_id.not_nil!]).each { |id, u| authors[id] = u }
+    end
+    ctx = Message::Context.new(authors, replies, {} of Int64 => Array(Message::ReactionSummary))
+    payload = message.wire_json(ctx)
+    message.wire = payload.to_json
+    MessagePageCache.bump(convo.cid)
+    Realtime.to_conversation(convo.cid, {type: "message.created", message: payload})
     notify_mentions_and_reply(author, convo, message, ctx) if convo.group_like?
-    Xp.after_change(author.uid) if paid
+    Xp.after_change(author.uid) if job.xp_paid
     Stats.bump("messages")
     {message, true}
   end
@@ -59,6 +63,7 @@ module Messaging
     raise Invalid.new(["mensagem vazia"]) if text.nil? && message.image_key.nil?
     raise Invalid.new(["mensagem muito longa"]) if text && text.size > Message::MAX_BODY
     message.update_columns(body: text, edited_at: Time.utc)
+    MessagePageCache.bump(message.conversation_id.not_nil!)
     Realtime.to_conversation(message.conversation_id.not_nil!, {type: "message.updated", message: message.wire_json})
     message
   end
@@ -69,6 +74,7 @@ module Messaging
     unless message.deleted?
       message.update_columns(deleted_at: Time.utc)
       Reaction.where(message_id: message.mid).delete_all
+      MessagePageCache.bump(convo.cid)
       Realtime.to_conversation(convo.cid, {type: "message.updated", message: message.wire_json})
       Stats.bump("messages", -1)
     end
@@ -95,6 +101,7 @@ module Messaging
       end
     end
     summary = Reaction.summaries([message.mid])[message.mid]? || [] of Message::ReactionSummary
+    MessagePageCache.bump(message.conversation_id.not_nil!)
     Realtime.to_conversation(message.conversation_id.not_nil!, {
       type: "reaction.updated", message_id: message.mid, reactions: summary,
     })

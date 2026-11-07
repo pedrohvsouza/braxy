@@ -14,6 +14,11 @@ class Conversation < ApplicationRecord
   timestamps
 
   before_validation :normalize
+  after_save :bust_access
+
+  private def bust_access : Nil
+    id.try { |cid| Invalidation.conversation(cid) }
+  end
 
   validates :kind, inclusion: {in: ["lobby", "group", "dm"]}
   validate :group_shape
@@ -91,6 +96,14 @@ class Conversation < ApplicationRecord
   def can_moderate?(user : User) : Bool
     return false if dm?
     user.staff? || owner?(user.uid)
+  end
+
+  # The other participant of a DM, from its key (no query).
+  def dm_other_id(user_id : Int64) : Int64?
+    key = dm_key
+    return nil if key.nil?
+    a, b = key.split(":").map(&.to_i64)
+    a == user_id ? b : a
   end
 
   def other_member_id(user_id : Int64) : Int64?

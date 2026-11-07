@@ -8,6 +8,15 @@ class Membership < ApplicationRecord
 
   validates :role, inclusion: {in: ["owner", "member"]}
 
+  after_save :bust_access
+  after_destroy :bust_access
+
+  private def bust_access : Nil
+    if (cid = conversation_id) && (uid = user_id)
+      Invalidation.member(cid, uid)
+    end
+  end
+
   def self.ensure!(conversation_id : Int64, user_id : Int64, role : String = "member") : Membership
     find_by(conversation_id: conversation_id, user_id: user_id) ||
       create!(conversation_id: conversation_id, user_id: user_id, role: role)

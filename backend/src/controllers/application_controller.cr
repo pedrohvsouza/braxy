@@ -14,19 +14,17 @@ class ApplicationController < Saci::Controller
   private def current_user : User?
     return @current_user if @current_user_loaded
     @current_user_loaded = true
-    id = session.int(Saci::Auth.session_key)
-    @current_user = if id.nil?
-                      nil
-                    elsif Saci::CSRF.safe_method?(request.method)
-                      UserCache.fetch(id) # read-only use
-                    else
-                      UserCache.invalidate(id)
-                      User.find_by(id: id) # fresh, safe to mutate
-                    end
+    # Shared, read-only object: actions that modify the user call `fresh_me`.
+    @current_user = session.int(Saci::Auth.session_key).try { |id| UserCache.fetch(id) }
   end
 
   private def me : User
     current_user.not_nil!
+  end
+
+  # A freshly loaded copy of the signed-in user that is safe to modify.
+  private def fresh_me : User
+    User.find_by(id: me.uid).not_nil!
   end
 
   private def require_login : Nil
@@ -89,10 +87,12 @@ class ApplicationController < Saci::Controller
 
   # Loads the conversation from :id (or another route param) when the
   # current user is a member; renders 404 otherwise (no existence leak).
-  private def member_conversation(param : String = "id") : Conversation?
+  # `fresh: true` returns a newly loaded row the caller may modify; the
+  # default is a shared, cached read-only object.
+  private def member_conversation(param : String = "id", fresh : Bool = false) : Conversation?
     cid = params[param]?.try(&.to_i64?)
-    convo = cid.try { |c| Conversation.find_by(id: c) }
-    if convo && convo.member?(me.uid)
+    convo = cid.try { |c| fresh ? Conversation.find_by(id: c) : Access.conversation(c) }
+    if convo && Access.member?(convo.cid, me.uid)
       convo
     else
       not_found("conversa não encontrada")

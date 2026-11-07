@@ -7,6 +7,7 @@ LEVELS=${2:-"16 64 256 512 1024"}
 T=${WRK_THREADS:-10}
 C=results/cookies.tsv
 run() { # name path method
+  if [ -n "${ONLY:-}" ] && ! echo " $ONLY " | grep -q " $1 "; then return; fi
   for c in $LEVELS; do
     out=$(wrk -t"$T" -c"$c" -d"$DUR" --latency -s wrk-users.lua "$TARGET" -- "$C" "$2" "$3" 2>&1 | grep RESULT)
     echo "$out" | awk -v ep="$1" -v c="$c" '{

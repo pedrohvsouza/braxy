@@ -40,9 +40,9 @@ end
 function done(summary, latency, requests)
   local s = summary
   io.write(string.format(
-    "RESULT rps=%.0f p50=%.2f p90=%.2f p99=%.2f max=%.2f total=%d errors=%d sockerr=%d timeouts=%d\n",
+    "RESULT rps=%.0f p50=%.2f p90=%.2f p95=%.2f p99=%.2f max=%.2f total=%d errors=%d sockerr=%d timeouts=%d\n",
     s.requests / (s.duration / 1e6),
-    latency:percentile(50) / 1000, latency:percentile(90) / 1000, latency:percentile(99) / 1000,
+    latency:percentile(50) / 1000, latency:percentile(90) / 1000, latency:percentile(95) / 1000, latency:percentile(99) / 1000,
     latency.max / 1000, s.requests,
     s.errors.status, s.errors.connect + s.errors.read + s.errors.write, s.errors.timeout))
 end

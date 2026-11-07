@@ -78,6 +78,7 @@ module Api
 
     private def accept!(f : Friendship) : Nil
       f.update_columns(status: "accepted", accepted_at: Time.utc)
+      f.bust_access
       requester = f.requester_id.not_nil!
       addressee = f.addressee_id.not_nil!
       Notification.deliver!(requester, "friend_accepted", actor_id: addressee)

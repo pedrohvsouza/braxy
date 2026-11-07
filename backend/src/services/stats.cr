@@ -11,7 +11,7 @@ require "random/secure"
 # the only one that broadcasts (at most once every INTERVAL, and only when
 # something changed), so readers never get duplicate frames.
 module Stats
-  INTERVAL   = 3.seconds
+  INTERVAL   = 1.second
   LEASE      = 10.seconds
   RECOUNT    = 5.minutes
   PREFIX     = "braxy:stats:"
@@ -39,12 +39,31 @@ module Stats
     KV.backend.get(key).try(&.to_i64) || value
   end
 
-  # Moves a counter only when it is already seeded (an unseeded one is
-  # counted from the database on first read, which includes this change).
+  # Counter changes accumulate in memory and reach Redis on `flush!` (every
+  # second, and before any snapshot), so a hot path pays no Redis round trip.
+  @@pending = {} of String => Int64
+  @@pending_mutex = Mutex.new
+  @@local_dirty = Atomic(Int32).new(0)
+
   def self.bump(name : String, by : Int64 = 1) : Nil
-    key = PREFIX + name
-    KV.backend.incr(key, by) if KV.backend.get(key)
+    @@pending_mutex.synchronize { @@pending[name] = (@@pending[name]? || 0_i64) + by }
     touch!
+  end
+
+  # Sends pending counter changes (only to counters already seeded: an
+  # unseeded one is counted from the database on first read) and the dirty
+  # flag to Redis.
+  def self.flush! : Nil
+    pending = @@pending_mutex.synchronize do
+      p = @@pending
+      @@pending = {} of String => Int64
+      p
+    end
+    pending.each do |name, by|
+      key = PREFIX + name
+      KV.backend.incr(key, by) if by != 0 && KV.backend.get(key)
+    end
+    KV.backend.set(DIRTY_KEY, "1") if @@local_dirty.swap(0) == 1
   end
 
   def self.recount! : Nil
@@ -56,6 +75,7 @@ module Stats
   end
 
   def self.snapshot
+    flush!
     {
       users:    counter("users"),
       messages: counter("messages"),
@@ -65,7 +85,7 @@ module Stats
   end
 
   def self.touch! : Nil
-    KV.backend.set(DIRTY_KEY, "1")
+    @@local_dirty.set(1)
   end
 
   def self.leader? : Bool
@@ -83,6 +103,7 @@ module Stats
       loop do
         sleep INTERVAL
         begin
+          flush! # every process sends its own counters
           next unless leader?
           if Time.instant - last_recount > RECOUNT
             recount!

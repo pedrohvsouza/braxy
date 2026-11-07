@@ -1,6 +1,6 @@
 # Benchmark profile: the system under test (backend + postgres + redis) is
-# confined to 4 cores (cpuset 0-3) and 2 GB RAM in total (backend 1664 MiB,
-# postgres 320 MiB, redis 64 MiB); the load generator
+# confined to 4 cores (cpuset 0-3) and ~2.7 GB RAM in total (backend 1664 MiB,
+# postgres 1 GiB, redis 64 MiB); the load generator
 # runs on the remaining cores, inside the compose network (no docker-proxy).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d pg redis s3 backend loadgen
@@ -8,9 +8,9 @@
 services:
   pg:
     cpuset: "0-3"
-    mem_limit: 320m
-    shm_size: 128m
-    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=96MB", "-c", "synchronous_commit=on"]
+    mem_limit: 1024m
+    shm_size: 320m
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "effective_cache_size=640MB", "-c", "work_mem=4MB", "-c", "synchronous_commit=on", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
 
   redis:
     cpuset: "0-3"

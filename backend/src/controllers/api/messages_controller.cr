@@ -12,9 +12,19 @@ module Api
     def index
       convo = member_conversation
       return if convo.nil?
-      limit = Message::PAGE_SIZE
       before = params["before"]?.try(&.to_i64?)
       after = params["after"]?.try(&.to_i64?)
+      if before.nil? && after.nil?
+        # Opening a conversation: the latest page, shared by every member.
+        json = MessagePageCache.fetch(convo.cid) { page_json(convo, nil, nil) }
+        render body: json, content_type: "application/json"
+      else
+        render body: page_json(convo, before, after), content_type: "application/json"
+      end
+    end
+
+    private def page_json(convo : Conversation, before : Int64?, after : Int64?) : String
+      limit = Message::PAGE_SIZE
       scope = Message.where(conversation_id: convo.cid)
       rows = if after
                scope.where("id > ?", after).order(:id, :asc).limit(limit + 1).to_a
@@ -28,22 +38,26 @@ module Api
         rows = after ? rows[0, limit] : rows[1..]
       end
       ctx = Message::Context.for(rows)
-      render json: {messages: rows.map(&.wire_json(ctx)), has_more: has_more}
+      {messages: rows.map(&.wire_json(ctx)), has_more: has_more}.to_json
     end
 
     def create
       convo = member_conversation
       return if convo.nil?
       if convo.dm?
-        other = convo.other_member_id(me.uid)
-        unless other && Friendship.friends?(me.uid, other)
+        other = convo.dm_other_id(me.uid)
+        unless other && Access.friends?(me.uid, other)
           forbidden("Vocês não são mais amigos")
           return
         end
       end
       message, created = Messaging.post(me, convo, str_param("body"), str_param("image_key"),
         id_param("reply_to_id"), str_param("client_id"))
-      render json: {message: message.wire_json}, status: created ? :created : :ok
+      if wire = message.wire
+        render body: %({"message":#{wire}}), content_type: "application/json", status: created ? 201 : 200
+      else
+        render json: {message: message.wire_json}, status: created ? :created : :ok
+      end
     rescue ex : Messaging::Invalid
       render_errors(ex.errors)
     end

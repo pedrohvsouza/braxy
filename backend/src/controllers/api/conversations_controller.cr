@@ -88,6 +88,7 @@ module Api
         return
       end
       convo.update_columns(avatar_key: Uploads.store_image(file.bytes))
+      Invalidation.conversation(convo.cid)
       broadcast_updated(convo)
       render json: {conversation: convo.detail_json(me)}
     rescue ex : Uploads::Invalid
@@ -138,7 +139,7 @@ module Api
     end
 
     def read
-      convo = member_conversation
+      convo = member_conversation(fresh: true) # needs the current last_message_id
       return if convo.nil?
       membership = convo.membership_for(me.uid).not_nil!
       upto = id_param("message_id") || convo.last_message_id || 0_i64
@@ -154,7 +155,7 @@ module Api
     end
 
     private def owned_group : Conversation?
-      convo = member_conversation
+      convo = member_conversation(fresh: true)
       return nil if convo.nil?
       unless convo.kind == "group" && convo.owner?(me.uid)
         forbidden("só o dono do grupo pode fazer isso")

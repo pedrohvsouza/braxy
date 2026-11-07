@@ -29,17 +29,13 @@ module Xp
     true
   end
 
-  # Message XP with a per-user cooldown (claimed atomically so parallel
-  # sends cannot both pay).
-  def self.for_message(user : User, message : Message, conversation : Conversation, notify : Bool = true) : Bool
-    now = Time.utc
-    db = Saci::Record.connection
-    claimed = Saci::Record.exec_compat(db,
-      "UPDATE users SET last_message_xp_at = ? WHERE id = ? AND (last_message_xp_at IS NULL OR last_message_xp_at < ?)",
-      [now, user.uid, now - MESSAGE_COOLDOWN] of Saci::Record::Value).rows_affected
-    return false if claimed == 0
-    amount = conversation.dm? ? DM_MESSAGE : GROUP_MESSAGE
-    award(user.uid, "message", amount, "message:#{message.mid}", notify: notify)
+  # Message XP cooldown, claimed atomically in Redis (SET NX with a TTL) so
+  # parallel sends — on any process — cannot both pay, and no database
+  # write happens for the posts in between. Returns the XP to award (0
+  # while cooling down); the batch writer persists it.
+  def self.claim_message_xp(user : User, conversation : Conversation) : Int32
+    return 0 unless KV.backend.set("braxy:msgxp:#{user.uid}", "1", ttl: MESSAGE_COOLDOWN, nx: true)
+    conversation.dm? ? DM_MESSAGE : GROUP_MESSAGE
   end
 
   # The Redis guard makes every request after the first of the day free
@@ -70,7 +66,7 @@ module Xp
       "UPDATE users SET last_daily_xp_on = ? WHERE id = ? AND (last_daily_xp_on IS NULL OR last_daily_xp_on < ?)",
       [day, user.uid, day] of Saci::Record::Value).rows_affected
     return false if claimed == 0
-    UserCache.invalidate(user.uid)
+    Invalidation.user(user.uid)
     award(user.uid, "daily_login", DAILY_LOGIN, "day:#{today.to_s("%Y-%m-%d")}")
   end
 
@@ -81,7 +77,7 @@ module Xp
   # Recomputes the stored level, notifies on level-up and pushes the new
   # progress to the user's own sockets.
   def self.after_change(user_id : Int64) : Nil
-    UserCache.invalidate(user_id)
+    Invalidation.user(user_id)
     user = User.find_by(id: user_id)
     return if user.nil?
     progress = Levels.progress(user.xp_total)

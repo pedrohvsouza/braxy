@@ -130,6 +130,8 @@ def with_app(&)
   Saci::Cache.clear rescue nil
   KV.reset!
   UserCache.clear!
+  Access.clear!
+  MessagePageCache.clear!
   Xp.reset_memo!
   Saci::TestSession.serve(BraxyRoutes.build) { |app| yield app }
 end

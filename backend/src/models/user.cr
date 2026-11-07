@@ -22,6 +22,7 @@ class User < ApplicationRecord
   has_secure_password
 
   before_validation :normalize
+  after_save :bust_cache
 
   validates :name, presence: true, length: {minimum: 2, maximum: 40}
   validates :username, presence: true, format: USERNAME_RE, uniqueness: true
@@ -116,6 +117,10 @@ class User < ApplicationRecord
     return map if list.empty?
     User.where("id IN (#{list.join(",")})").to_a.each { |u| map[u.uid] = u }
     map
+  end
+
+  private def bust_cache : Nil
+    Invalidation.user(id)
   end
 
   private def normalize : Nil

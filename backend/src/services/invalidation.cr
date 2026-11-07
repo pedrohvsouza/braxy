@@ -1,0 +1,77 @@
+# Cross-process cache invalidation over Redis pub/sub.
+#
+# Caches in this app are per process (UserCache, Access). A change made on
+# one process invalidates locally right away and publishes the key; every
+# other process drops it as soon as the message arrives, so the caches can
+# keep long TTLs without serving stale authorization data (e.g. a member
+# removed from a group loses access everywhere at once).
+#
+# Messages: "user:<id>", "conv:<id>", "member:<cid>:<uid>", "friends:<a>:<b>".
+module Invalidation
+  CHANNEL = "braxy:invalidate"
+
+  @@info : Saci::Cable::RedisWire::Info? = nil
+
+  def self.publish(key : String) : Nil
+    apply(key) # this process, synchronously
+    if KV.backend.is_a?(KV::RedisBackend)
+      KV.backend.as(KV::RedisBackend).call(["PUBLISH", CHANNEL, key])
+    end
+  rescue ex
+    Saci::Cable.report_error(ex, "invalidation publish")
+  end
+
+  # Subscribes this process (no-op without Redis). Reconnects on failure;
+  # after a reconnect every cache is cleared, since messages may have been
+  # missed meanwhile.
+  def self.listen(url : String) : Nil
+    info = Saci::Cable::RedisWire.parse_url(url)
+    spawn(name: "braxy-invalidation") do
+      first = true
+      loop do
+        begin
+          conn = Saci::Cable::RedisWire::Conn.new(info, subscriber: true)
+          conn.subscribe(CHANNEL, -> {
+            clear_all unless first
+            first = false
+            nil
+          }) { |key| apply(key) }
+        rescue ex
+          Saci::Cable.report_error(ex, "invalidation listener")
+          sleep 1.second
+        end
+      end
+    end
+  end
+
+  def self.apply(key : String) : Nil
+    parts = key.split(":")
+    case parts[0]?
+    when "user"    then UserCache.invalidate(parts[1]?.try(&.to_i64?))
+    when "conv"    then parts[1]?.try(&.to_i64?).try { |id| Access.invalidate_conversation(id) }
+    when "member"  then (c = parts[1]?.try(&.to_i64?)) && (u = parts[2]?.try(&.to_i64?)) && Access.invalidate_member(c, u)
+    when "friends" then (a = parts[1]?.try(&.to_i64?)) && (b = parts[2]?.try(&.to_i64?)) && Access.invalidate_friends(a, b)
+    end
+  end
+
+  private def self.clear_all : Nil
+    UserCache.clear!
+    Access.clear!
+  end
+
+  def self.user(id : Int64?) : Nil
+    id.try { |i| publish("user:#{i}") }
+  end
+
+  def self.conversation(id : Int64) : Nil
+    publish("conv:#{id}")
+  end
+
+  def self.member(conversation_id : Int64, user_id : Int64) : Nil
+    publish("member:#{conversation_id}:#{user_id}")
+  end
+
+  def self.friends(a : Int64, b : Int64) : Nil
+    publish("friends:#{a}:#{b}")
+  end
+end

@@ -52,7 +52,10 @@ const CONFIGS = [
 
 // wrk sweeps (2,000 rotating users) — a different, heavier methodology than
 // the autocannon runs above (single user), so they are their own config.
-const WRK = [["w4p8", "Saci otimizado · 4 processos (wrk)"]];
+const WRK = [
+  ["w4p8", "Saci otimizado · 4 processos (wrk)"],
+  ["w11", "Cache + escrita em lote · 4 processos (wrk)"],
+];
 
 const http = [];
 for (const [slug, config] of CONFIGS) {
@@ -67,7 +70,7 @@ for (const [slug, config] of WRK) {
     if (!line.startsWith("POINT:")) continue;
     const p = JSON.parse(line.slice(6));
     const names = { up: "GET /up", session: "GET /api/session", sidebar: "GET /api/sidebar", messages: "GET messages", post: "POST message" };
-    http.push({ config, endpoint: p.endpoint, name: names[p.endpoint], connections: p.connections, rps: p.rps, p50: p.p50, p90: p.p90, p99: p.p99, errors: p.errors + p.sockerr + p.timeouts, non2xx: 0 });
+    http.push({ config, endpoint: p.endpoint, name: names[p.endpoint], connections: p.connections, rps: p.rps, p50: p.p50, p90: p.p90, p95: p.p95 ?? null, p99: p.p99, errors: p.errors + p.sockerr + p.timeouts, non2xx: 0 });
   }
 }
 writeFileSync("results/http_sweep.json", JSON.stringify(http, null, 1));

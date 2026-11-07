@@ -18,6 +18,10 @@ class Message < ApplicationRecord
 
   before_validation :normalize
 
+  # Serialized `wire_json` set by Messaging.post (not a column): the HTTP
+  # response reuses it instead of rebuilding the payload with queries.
+  property wire : String? = nil
+
   validates :conversation_id, presence: true
   validates :author_id, presence: true
   validates :body, length: {maximum: MAX_BODY}, allow_nil: true

@@ -20,8 +20,12 @@ elsif ENV["SACI_MT"]? == "1"
   Saci.enable_multithreading!
 end
 
-# Build the Redis pool before any request can race to create it.
+# Build the Redis pool before any request can race to create it, and start
+# listening for cache invalidations from other processes.
 KV.backend
+if (redis_url = ENV["REDIS_URL"]?) && !redis_url.empty?
+  Invalidation.listen(redis_url)
+end
 Stats.start_broadcaster
 
 Saci::Deploy.boot_summary(app: "braxy", db_url: db_url, server: server_config)

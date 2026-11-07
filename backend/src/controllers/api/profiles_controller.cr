@@ -6,7 +6,7 @@ module Api
     before_action :require_login
 
     def update
-      user = me
+      user = fresh_me
       if params.dig("name")
         user.name = str_param("name")
       end
@@ -38,7 +38,7 @@ module Api
     end
 
     def password
-      user = me
+      user = fresh_me
       unless user.authenticate(str_param("current_password") || "")
         render_errors(["Senha atual incorreta"])
         return
@@ -60,8 +60,9 @@ module Api
         return
       end
       key = Uploads.store_image(file.bytes)
-      user = me
+      user = fresh_me
       user.update_columns(avatar_key: key)
+      Invalidation.user(user.uid)
       render json: {user: user.me_json}
     rescue ex : Uploads::Invalid
       render_errors([ex.message.to_s])

@@ -56,7 +56,7 @@ describe Stats do
 end
 
 describe Messaging do
-  it "writes the message, cursors and XP in one transaction" do
+  it "writes the message, conversation bookkeeping and XP" do
     with_app do |_app|
       bob = Fixtures.user("bob")
       lobby = Conversation.lobby
@@ -64,7 +64,7 @@ describe Messaging do
       m, created = Messaging.post(bob, lobby, "oi", nil, nil, nil)
       created.should be_true
       Conversation.find_by(id: lobby.cid).not_nil!.last_message_id.should eq(m.mid)
-      lobby.membership_for(bob.uid).not_nil!.last_read_message_id.should eq(m.mid)
+      (Sidebar.unread_counts(bob.uid)[lobby.cid]? || 0).should eq(0) # own message is not unread
       User.find_by(id: bob.uid).not_nil!.xp_total.should eq(Xp::GROUP_MESSAGE)
       XpEvent.where(user_id: bob.uid, kind: "message").count.should eq(1)
     end

@@ -6,7 +6,7 @@
 #   cached User is never mutated while other fibers read it.
 # * Local writes call `invalidate`. Other processes see a change within TTL.
 module UserCache
-  TTL         = 2.seconds
+  TTL         = 5.minutes # changes are pushed by Invalidation
   MAX_ENTRIES = 100_000
 
   @@mutex = Mutex.new

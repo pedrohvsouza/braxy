@@ -9,6 +9,15 @@ class Friendship < ApplicationRecord
 
   validates :status, inclusion: {in: ["pending", "accepted"]}
 
+  after_save :bust_access
+  after_destroy :bust_access
+
+  def bust_access : Nil
+    if (a = requester_id) && (b = addressee_id)
+      Invalidation.friends(a, b)
+    end
+  end
+
   def self.pair_key(a : Int64, b : Int64) : String
     a < b ? "#{a}:#{b}" : "#{b}:#{a}"
   end
