@@ -301,6 +301,41 @@ textarea.input {
   animation: bootPulse 1.4s ease-in-out infinite;
 }
 
+.bootCard {
+  max-width: 420px;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.bootCard h1 {
+  margin: 14px 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.bootCard p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.bootCard .muted {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.bootCard .bootMeta {
+  min-height: 1.2em;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 @keyframes bootPulse {
   50% {
     transform: scale(1.08);

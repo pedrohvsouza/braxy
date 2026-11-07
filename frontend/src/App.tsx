@@ -2,11 +2,13 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthPage } from "./components/auth/AuthPage";
 import { ChatView } from "./components/chat/ChatView";
 import { EmptyState } from "./components/empty/EmptyState";
+import { ServerStarting } from "./components/layout/ServerStarting";
 import { Shell } from "./components/layout/Shell";
+import { isUnavailable } from "./lib/api";
 import { useSession } from "./lib/queries";
 
 export function App() {
-  const { data, isLoading, isError, refetch } = useSession();
+  const { data, error, isLoading, isError, isFetching, refetch } = useSession();
 
   if (isLoading) {
     return (
@@ -15,17 +17,8 @@ export function App() {
       </div>
     );
   }
-  if (isError) {
-    return (
-      <div className="boot">
-        <p>
-          Servidor indisponível.{" "}
-          <button className="btn btn-sm" onClick={() => void refetch()} type="button">
-            Tentar de novo
-          </button>
-        </p>
-      </div>
-    );
+  if (isError && !data) {
+    return <ServerStarting starting={isUnavailable(error)} retrying={isFetching} onRetry={() => void refetch()} />;
   }
   if (!data?.user) return <AuthPage />;
 

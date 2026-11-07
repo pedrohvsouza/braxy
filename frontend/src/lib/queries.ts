@@ -1,5 +1,5 @@
 import { type InfiniteData, QueryClient, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, isUnavailable } from "./api";
 import type { ChatMessage, Me, MembersPage, MessagesPage, NotificationsData, SidebarData, Stats } from "./types";
 
 export const keys = {
@@ -15,8 +15,18 @@ export const keys = {
   search: (q: string) => ["search", q] as const,
 };
 
+export const BOOT_RETRY_MS = 3000;
+
 export function useSession() {
-  return useQuery({ queryKey: keys.session, queryFn: api.session, staleTime: Infinity });
+  return useQuery({
+    queryKey: keys.session,
+    queryFn: api.session,
+    staleTime: Infinity,
+    // A backend that is starting shows the waiting screen right away and is
+    // polled until it answers.
+    retry: (count, err) => !isUnavailable(err) && count < 1,
+    refetchInterval: (query) => (isUnavailable(query.state.error) ? BOOT_RETRY_MS : false),
+  });
 }
 
 let lastMe: Me | null = null;

@@ -183,6 +183,15 @@ export const ptBR = {
   "footer.reconnecting": "Conexão perdida, reconectando…",
   "footer.madeWith": "Feito usando",
 
+  "boot.starting": "O servidor está iniciando…",
+  "boot.startingText": "O Braxy ainda não respondeu. Assim que ele subir, esta tela some sozinha.",
+  "boot.devHint": "No primeiro make up o backend compila por uns 3 minutos.",
+  "boot.waiting": "Aguardando há {time} · nova tentativa a cada 3 s",
+  "boot.checking": "Verificando…",
+  "boot.error": "Algo deu errado",
+  "boot.errorText": "Não foi possível carregar sua sessão.",
+  "boot.retry": "Tentar agora",
+
   "common.close": "Fechar",
   "common.error": "Algo deu errado.",
   "common.you": "Você",

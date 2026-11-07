@@ -8,12 +8,19 @@ import type {
 export class ApiError extends Error {
   status: number;
   errors: string[];
+  /** The backend is down or still starting (not a real API error). */
+  unavailable: boolean;
 
-  constructor(status: number, errors: string[]) {
+  constructor(status: number, errors: string[], unavailable = false) {
     super(errors[0] ?? `HTTP ${status}`);
     this.status = status;
     this.errors = errors;
+    this.unavailable = unavailable;
   }
+}
+
+export function isUnavailable(err: unknown): boolean {
+  return err instanceof ApiError && err.unavailable;
 }
 
 function csrfToken(): string {
@@ -36,7 +43,7 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, ["Sem conexão com o servidor"]);
+    throw new ApiError(0, ["Sem conexão com o servidor"], true);
   }
 
   const text = await res.text();
@@ -48,6 +55,11 @@ async function request<T>(method: string, path: string, body?: unknown, retried 
   }
 
   if (!res.ok) {
+    // Gateway errors, or the empty 500 the dev proxy answers while the
+    // backend is still compiling and not listening yet.
+    if ([502, 503, 504].includes(res.status) || (res.status === 500 && !text)) {
+      throw new ApiError(res.status, ["Servidor indisponível"], true);
+    }
     const obj = (data ?? {}) as { error?: string; errors?: string[] };
     // A rotated CSRF cookie is recoverable once: refresh it and retry.
     if (res.status === 403 && obj.error === "token CSRF inválido" && !retried) {
