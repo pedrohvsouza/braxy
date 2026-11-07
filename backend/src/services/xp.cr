@@ -11,21 +11,27 @@ module Xp
   # Brazil has no DST since 2019: a fixed UTC-3 "day" is enough.
   BRT = Time::Location.fixed("BRT", -3 * 3600)
 
-  def self.award(user_id : Int64, kind : String, amount : Int32, source_key : String) : Bool
-    begin
-      XpEvent.create!(user_id: user_id, kind: kind, amount: amount, source_key: source_key)
-    rescue Saci::Record::RecordInvalid | DB::Error
-      return false # already paid
-    end
+  # Pays `amount` once per (user, kind, source_key). `notify: false` only
+  # writes (safe inside a transaction); the caller runs `after_change`
+  # after commit.
+  def self.award(user_id : Int64, kind : String, amount : Int32, source_key : String, notify : Bool = true) : Bool
     db = Saci::Record.connection
+    now = Time.utc
+    # ON CONFLICT instead of rescuing a unique violation: an error would
+    # abort the surrounding transaction.
+    inserted = Saci::Record.exec_compat(db,
+      "INSERT INTO xp_events (user_id, kind, amount, source_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) " \
+      "ON CONFLICT (user_id, kind, source_key) DO NOTHING",
+      [user_id, kind, amount.to_i64, source_key, now, now] of Saci::Record::Value).rows_affected
+    return false if inserted == 0
     Saci::Record.exec_compat(db, "UPDATE users SET xp = xp + ? WHERE id = ?", [amount.to_i64, user_id] of Saci::Record::Value)
-    after_change(user_id)
+    after_change(user_id) if notify
     true
   end
 
   # Message XP with a per-user cooldown (claimed atomically so parallel
   # sends cannot both pay).
-  def self.for_message(user : User, message : Message, conversation : Conversation) : Bool
+  def self.for_message(user : User, message : Message, conversation : Conversation, notify : Bool = true) : Bool
     now = Time.utc
     db = Saci::Record.connection
     claimed = Saci::Record.exec_compat(db,
@@ -33,11 +39,15 @@ module Xp
       [now, user.uid, now - MESSAGE_COOLDOWN] of Saci::Record::Value).rows_affected
     return false if claimed == 0
     amount = conversation.dm? ? DM_MESSAGE : GROUP_MESSAGE
-    award(user.uid, "message", amount, "message:#{message.mid}")
+    award(user.uid, "message", amount, "message:#{message.mid}", notify: notify)
   end
 
+  # The Redis guard makes every request after the first of the day free
+  # (no UPDATE at all).
   def self.daily_login(user : User) : Bool
     today = Time.utc.in(BRT).at_beginning_of_day
+    guard = "braxy:daily:#{user.uid}:#{today.to_s("%Y-%m-%d")}"
+    return false unless KV.backend.set(guard, "1", ttl: 26.hours, nx: true)
     day = Time.utc(today.year, today.month, today.day)
     db = Saci::Record.connection
     claimed = Saci::Record.exec_compat(db,

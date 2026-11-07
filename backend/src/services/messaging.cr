@@ -30,20 +30,25 @@ module Messaging
       conversation_id: convo.cid, author_id: author.uid, body: body,
       image_key: image_key.try(&.presence), reply_to_id: reply_to_id, client_id: client_id,
     )
-    raise Invalid.new(message.errors.full_messages) unless message.save
+    raise Invalid.new(message.errors.full_messages) unless message.valid?
 
-    convo.update_columns(last_message_id: message.mid, last_message_at: message.created_at || Time.utc)
-    # The author has obviously read up to their own message.
-    if m = convo.membership_for(author.uid)
-      m.update_columns(last_read_message_id: message.mid)
+    # One transaction = one commit (one fsync) for all four writes.
+    paid = false
+    Saci::Record.transaction do |_tx|
+      raise Invalid.new(message.errors.full_messages) unless message.save
+      at = message.created_at || Time.utc
+      Conversation.where(id: convo.cid).update_all(last_message_id: message.mid, last_message_at: at)
+      # The author has obviously read up to their own message.
+      Membership.where(conversation_id: convo.cid, user_id: author.uid).update_all(last_read_message_id: message.mid)
+      paid = Xp.for_message(author, message, convo, notify: false)
     end
 
+    # Side effects only after commit.
     ctx = Message::Context.for([message])
     Realtime.to_conversation(convo.cid, {type: "message.created", message: message.wire_json(ctx)})
-
     notify_mentions_and_reply(author, convo, message, ctx) if convo.group_like?
-    Xp.for_message(author, message, convo)
-    Stats.touch!
+    Xp.after_change(author.uid) if paid
+    Stats.bump("messages")
     {message, true}
   end
 
@@ -65,7 +70,7 @@ module Messaging
       message.update_columns(deleted_at: Time.utc)
       Reaction.where(message_id: message.mid).delete_all
       Realtime.to_conversation(convo.cid, {type: "message.updated", message: message.wire_json})
-      Stats.touch!
+      Stats.bump("messages", -1)
     end
     message
   end
