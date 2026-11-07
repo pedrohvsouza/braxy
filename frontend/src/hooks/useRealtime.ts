@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { Cable, type CableEvent } from "../lib/cable";
 import { appInFocus, bumpTitleBadge, clearTitleBadge, showDesktopNotification } from "../lib/desktopNotify";
 import { plainText } from "../lib/markup";
+import { queueRead } from "../lib/readQueue";
 import { notificationText } from "../lib/notificationText";
 import {
   bumpSidebar, keys, lastMessageId, patchMessage, prependNotification, setStats, upsertMessage,
@@ -80,7 +81,7 @@ export function useRealtime(me: Me): void {
       }
       if (!mine && (document.hidden || !active) && ui().sound) playPing();
       if (!mine && !appInFocus()) notifyMessage(msg);
-      if (!mine && active && !document.hidden) void api.markRead(msg.conversation_id, msg.id).catch(() => undefined);
+      if (!mine && active && !document.hidden) queueRead(msg.conversation_id, msg.id);
     };
 
     const handlers: Record<string, (e: CableEvent) => void> = {

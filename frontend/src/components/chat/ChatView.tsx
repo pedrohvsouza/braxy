@@ -8,6 +8,7 @@ import {
   clearUnread, flattenMessages, patchMessage, removeMessage, trimMessages, upsertMessage, useConversation, useMe,
   useMessages, useSidebar,
 } from "../../lib/queries";
+import { queueRead } from "../../lib/readQueue";
 import type { ChatMessage } from "../../lib/types";
 import { useUi } from "../../store/ui";
 import { ChatHeader } from "./ChatHeader";
@@ -74,7 +75,7 @@ function Conversation({ id }: { id: number }) {
     const mark = () => {
       if (document.hidden) return;
       clearUnread(qc, id);
-      void api.markRead(id, newestId).catch(() => undefined);
+      queueRead(id, newestId);
     };
     mark();
     document.addEventListener("visibilitychange", mark);
