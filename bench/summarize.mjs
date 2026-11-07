@@ -61,6 +61,7 @@ const WRK = [
   ["full25p4", "GC adaptativo + lote em 1 statement · 4 processos (wrk)"],
   ["full30p4", "Pool de frames + single-flight de mensagens · 4 processos (wrk)"],
   ["full33p4", "Versões locais + INSERT com unnest · 4 processos (wrk)"],
+  ["full35p4", "INSERT sem ON CONFLICT + GC por orçamento · 4 processos (wrk)"],
 ];
 
 const http = [];
