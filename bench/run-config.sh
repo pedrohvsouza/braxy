@@ -5,6 +5,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 slug=$1; cmd=$2; mt=${3:-0}
+# WS_ONLY=1 skips the HTTP sweep; WS_STEPS overrides the ramp steps.
+steps_arg=${WS_STEPS:+--steps $WS_STEPS}
 export COMPOSE_FILE=docker-compose.yml:docker-compose.bench.yml
 
 restart() {
@@ -17,15 +19,17 @@ restart() {
   echo "backend did not come up" >&2; exit 1
 }
 
+if [ "${WS_ONLY:-0}" != "1" ]; then
 echo "[$slug] http sweep"
 restart
 ./bench/stats.sh "bench/results/sweep-$slug-stats.csv" & sp=$!
 docker compose exec -T loadgen node http-sweep.mjs --duration 10 > "bench/results/http-sweep-$slug.txt" 2>&1 || true
 kill $sp
+fi
 
 echo "[$slug] websocket ramp"
 restart
 ./bench/stats.sh "bench/results/ws-$slug-stats.csv" & sp=$!
-docker compose exec -T loadgen node ws.mjs --procs 10 > "bench/results/ws-$slug.txt" 2>&1 || true
+docker compose exec -T loadgen node ws.mjs --procs 10 $steps_arg > "bench/results/ws-$slug.txt" 2>&1 || true
 kill $sp
 docker inspect braxy-backend-1 --format "[$slug] backend running={{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}"

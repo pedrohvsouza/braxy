@@ -1,5 +1,6 @@
 # Benchmark profile: the system under test (backend + postgres + redis) is
-# confined to 4 cores (cpuset 0-3) and 2 GB RAM in total; the load generator
+# confined to 4 cores (cpuset 0-3) and 2 GB RAM in total (backend 1664 MiB,
+# postgres 320 MiB, redis 64 MiB); the load generator
 # runs on the remaining cores, inside the compose network (no docker-proxy).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d pg redis s3 backend loadgen
@@ -7,22 +8,25 @@
 services:
   pg:
     cpuset: "0-3"
-    mem_limit: 768m
-    shm_size: 256m
-    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=192MB", "-c", "synchronous_commit=on"]
+    mem_limit: 320m
+    shm_size: 128m
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=96MB", "-c", "synchronous_commit=on"]
 
   redis:
     cpuset: "0-3"
-    mem_limit: 256m
+    mem_limit: 64m
 
   backend:
     cpuset: "0-3"
-    mem_limit: 1g
-    memswap_limit: 1g
+    mem_limit: 1664m
+    memswap_limit: 1664m
     environment:
       LOG_REQUESTS: "0"
       RATE_LIMIT: "off"
       SACI_MT: ${SACI_MT:-1}
+      # Boehm GC: higher = less free heap kept in reserve (more GC work).
+      GC_FREE_SPACE_DIVISOR: ${GC_FREE_SPACE_DIVISOR:-10}
+      BENCH_DEBUG: "1"
       CRYSTAL_WORKERS: "4"
       DATABASE_URL: postgres://braxy:braxy@pg:5432/braxy_development?initial_pool_size=8&max_idle_pool_size=32&max_pool_size=32&retry_delay=0.001
       APP_ORIGINS: http://localhost:5173,http://bench.local
@@ -44,7 +48,7 @@ services:
     image: node:22-alpine
     cpuset: "4-15"
     working_dir: /bench
-    command: ["sh", "-c", "npm install --no-audit --no-fund >/dev/null 2>&1; sleep infinity"]
+    command: ["sh", "-c", "apk add --no-cache wrk >/dev/null 2>&1; npm install --no-audit --no-fund >/dev/null 2>&1; sleep infinity"]
     environment:
       TARGET: http://backend:3000
     volumes:
