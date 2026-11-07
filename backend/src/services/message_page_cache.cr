@@ -25,18 +25,43 @@ module MessagePageCache
     KV.backend.incr(version_key(conversation_id))
   end
 
+  # Builds in progress per {conversation, version}: concurrent misses for
+  # the same page (a cold start, or every reader right after a post bumped
+  # the version) wait for one build instead of each querying Postgres.
+  @@inflight = {} of {Int64, String} => Array(::Channel(String?))
+
   def self.fetch(conversation_id : Int64, & : -> String) : String
     ver = version(conversation_id)
     now = Time.instant
     if hit = @@mutex.synchronize { @@entries[conversation_id]? }
       return hit[1] if hit[0] == ver && now - hit[2] < MAX_AGE
     end
-    json = yield
+    key = {conversation_id, ver}
+    waiter = nil.as(::Channel(String?)?)
     @@mutex.synchronize do
-      @@entries.clear if @@entries.size >= MAX_ENTRIES
-      @@entries[conversation_id] = {ver, json, now}
+      if waiters = @@inflight[key]?
+        waiter = ::Channel(String?).new(1)
+        waiters << waiter
+      else
+        @@inflight[key] = [] of ::Channel(String?)
+      end
     end
-    json
+    if w = waiter
+      # nil: the build failed; try on our own.
+      return w.receive || yield
+    end
+    json = nil.as(String?)
+    begin
+      json = yield
+      @@mutex.synchronize do
+        @@entries.clear if @@entries.size >= MAX_ENTRIES
+        @@entries[conversation_id] = {ver, json, now}
+      end
+      json
+    ensure
+      waiters = @@mutex.synchronize { @@inflight.delete(key) }
+      waiters.try &.each(&.send(json))
+    end
   end
 
   def self.clear! : Nil
