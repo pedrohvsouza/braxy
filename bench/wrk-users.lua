@@ -1,9 +1,10 @@
 -- wrk script: every request picks the next of N logged-in users, so caches
 -- keyed by user see realistic hit rates.
---   wrk -s wrk-users.lua <url> -- <cookies.tsv> <path template> [GET|POST]
--- The path template may contain {room}; POST sends a small chat message.
+--   wrk -s wrk-users.lua <url> -- <cookies.tsv> <path template> [GET|POST] [body]
+-- The path template may contain {room}; POST sends a small chat message
+-- unless another JSON body is given.
 local users = {}
-local path_tmpl, method
+local path_tmpl, method, body
 
 local function load(file)
   for line in io.lines(file) do
@@ -16,6 +17,7 @@ function init(args)
   load(args[1])
   path_tmpl = args[2] or "/api/session"
   method = args[3] or "GET"
+  body = args[4] or '{"body":"carga"}'
   -- Spread threads across the user list.
   idx = math.random(#users)
 end
@@ -27,7 +29,7 @@ function request()
   local headers = { ["Cookie"] = u.cookie, ["X-CSRF-Token"] = u.csrf, ["Origin"] = "http://bench.local" }
   if method == "POST" then
     headers["Content-Type"] = "application/json"
-    return wrk.format("POST", path, headers, '{"body":"carga"}')
+    return wrk.format("POST", path, headers, body)
   end
   return wrk.format("GET", path, headers)
 end
