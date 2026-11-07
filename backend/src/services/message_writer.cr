@@ -69,7 +69,10 @@ module MessageWriter
         when job = @@queue.receive
           batch << job
         else
-          break if batch.size >= MIN_FILL || Saci.env == "test"
+          # A lone post with nothing else queued goes out at once: waiting
+          # for company only pays off once posts are arriving together
+          # (and under load they queue up during the previous write anyway).
+          break if batch.size == 1 || batch.size >= MIN_FILL || Saci.env == "test"
           remaining = deadline - Time.instant
           break if remaining <= Time::Span.zero
           select
@@ -107,7 +110,7 @@ module MessageWriter
     end
   end
 
-  alias BatchArg = Array(Int64) | Array(Int64?) | Array(String) | Array(String?) | Time
+  alias BatchArg = Array(Int64) | Array(Int64?) | Array(String) | Array(String?) | Time | Int64 | String | Nil
 
   # The whole batch is ONE statement in autocommit: the message INSERT and,
   # through data-modifying CTEs, the XP events and user totals for the rows
@@ -136,25 +139,49 @@ module MessageWriter
            "ON CONFLICT (user_id, kind, source_key) DO NOTHING RETURNING user_id, amount), " \
            "upd AS (UPDATE users AS u SET xp = u.xp + t.amt FROM " \
            "(SELECT user_id, sum(amount)::bigint AS amt FROM xpe GROUP BY user_id) AS t WHERE u.id = t.user_id)"
-  SELECT_SQL             = " SELECT id, author_id, client_id, created_at FROM ins"
-  INSERT_ON_CONFLICT_SQL = INSERT_SQL.sub("RETURNING id, author_id", "ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id")
-  # {with ON CONFLICT, with XP} => statement
-  BATCH_SQL = {
-    {false, false} => INSERT_SQL + SELECT_SQL,
-    {false, true}  => INSERT_SQL + XP_SQL + SELECT_SQL,
-    {true, false}  => INSERT_ON_CONFLICT_SQL + SELECT_SQL,
-    {true, true}   => INSERT_ON_CONFLICT_SQL + XP_SQL + SELECT_SQL,
-  }
+  # A batch of one (the common case at low load) binds plain values: the
+  # driver's array encoding and unnest cost ~0.3 ms more per statement.
+  INSERT_ONE_SQL = "WITH ins AS (INSERT INTO messages (conversation_id, author_id, body, image_key, reply_to_id, client_id, created_at, updated_at) " \
+                   "VALUES ($1, $2, $3, $4, $5, $6, $7, $7) RETURNING id, author_id, client_id, created_at)"
+  SELECT_SQL  = " SELECT id, author_id, client_id, created_at FROM ins"
+  ON_CONFLICT = "ON CONFLICT (author_id, client_id) DO NOTHING RETURNING id, author_id"
+  # {single row, with ON CONFLICT, with XP} => statement
+  BATCH_SQL = begin
+    sql = {} of {Bool, Bool, Bool} => String
+    {true, false}.each do |single|
+      insert = single ? INSERT_ONE_SQL : INSERT_SQL
+      {true, false}.each do |conflict|
+        head = conflict ? insert.sub("RETURNING id, author_id", ON_CONFLICT) : insert
+        sql[{single, conflict, false}] = head + SELECT_SQL
+        sql[{single, conflict, true}] = head + XP_SQL + SELECT_SQL
+      end
+    end
+    sql
+  end
   UNIQUE_VIOLATION = "23505"
+
+  # :nodoc:
+  # Writes `batch` as one statement right now (specs: batches written by the
+  # writer fiber are always single in the test environment).
+  def self.__write_batch(batch : Array(Job)) : Nil
+    write_batch(batch)
+  end
 
   private def self.write_batch(batch : Array(Job)) : Nil
     now = Time.utc
     msgs = batch.map(&.message)
-    args = [
-      msgs.map(&.conversation_id.not_nil!), msgs.map(&.author_id.not_nil!),
-      msgs.map(&.body), msgs.map(&.image_key), msgs.map(&.reply_to_id),
-      msgs.map(&.client_id.not_nil!), now,
-    ] of BatchArg
+    single = batch.size == 1
+    args = if single
+             m = msgs[0]
+             [m.conversation_id.not_nil!, m.author_id.not_nil!, m.body, m.image_key, m.reply_to_id,
+              m.client_id.not_nil!, now] of BatchArg
+           else
+             [
+               msgs.map(&.conversation_id.not_nil!), msgs.map(&.author_id.not_nil!),
+               msgs.map(&.body), msgs.map(&.image_key), msgs.map(&.reply_to_id),
+               msgs.map(&.client_id.not_nil!), now,
+             ] of BatchArg
+           end
     paying = batch.select { |job| job.xp > 0 }
     unless paying.empty?
       args << paying.map(&.message.author_id.not_nil!)
@@ -166,11 +193,11 @@ module MessageWriter
     db = Saci::Record.connection.as(DB::Database)
     db.using_connection do |conn|
       begin
-        insert_rows(conn, BATCH_SQL[{false, !paying.empty?}], args, inserted)
+        insert_rows(conn, BATCH_SQL[{single, false, !paying.empty?}], args, inserted)
       rescue ex : PQ::PQError
         raise ex unless ex.field_message(:code) == UNIQUE_VIOLATION
         inserted.clear
-        insert_rows(conn, BATCH_SQL[{true, !paying.empty?}], args, inserted)
+        insert_rows(conn, BATCH_SQL[{single, true, !paying.empty?}], args, inserted)
       end
     end
 

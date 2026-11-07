@@ -54,6 +54,28 @@ describe MessageWriter do
       (User.find_by(id: ann.uid).not_nil!.xp || 0_i64).should be > xp_before
     end
   end
+
+  it "writes multi-row batches (with a duplicate) through the array statement" do
+    with_app do |_app|
+      ann = Fixtures.user("ann")
+      lobby = Conversation.lobby
+      Membership.ensure!(lobby.cid, ann.uid)
+      first, _ = Messaging.post(ann, lobby, "antes", nil, nil, "multi-0")
+      jobs = ["multi-0", "multi-1", "multi-2", "multi-2"].map_with_index do |cid, i|
+        m = Message.new(conversation_id: lobby.cid, author_id: ann.uid, body: "lote #{i} \"#{cid}\"", client_id: cid)
+        MessageWriter::Job.new(m, i == 1 ? 5 : 0, "Ann")
+      end
+      MessageWriter.__write_batch(jobs)
+      jobs[0].created.should be_false
+      jobs[0].message.mid.should eq(first.mid)
+      jobs[1].created.should be_true
+      jobs[1].xp_paid.should be_true
+      [jobs[2], jobs[3]].count(&.created).should eq(2) # both map to the one inserted row
+      jobs[2].message.mid.should eq(jobs[3].message.mid)
+      Message.where(conversation_id: lobby.cid).count.should eq(3)
+      Message.find_by(id: jobs[1].message.mid).not_nil!.body.should eq(%(lote 1 "multi-1"))
+    end
+  end
 end
 
 describe MessagePageCache do
