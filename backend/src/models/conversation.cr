@@ -110,8 +110,22 @@ class Conversation < ApplicationRecord
     member_ids.find { |id| id != user_id }
   end
 
+  # Members listed in the detail payload. Groups are capped at
+  # MAX_GROUP_MEMBERS (200), so they come whole; the lobby holds everyone,
+  # and listing tens of thousands of members (megabytes of JSON, seconds of
+  # queries) froze the page. Past this many, the payload carries the first
+  # ones (the owner and the viewer first) and `member_count` the total.
+  MEMBERS_SHOWN = 200
+
   def detail_json(viewer : User)
-    members = Membership.where(conversation_id: cid).to_a
+    scope = Membership.where(conversation_id: cid)
+    total = scope.count
+    members = if total <= MEMBERS_SHOWN
+                scope.to_a
+              else
+                scope.order_raw("(role = 'owner') DESC").order_raw("(user_id = #{viewer.uid.to_i64}) DESC")
+                  .order(:id).limit(MEMBERS_SHOWN).to_a
+              end
     users = User.by_ids(members.compact_map(&.user_id))
     online = Presence.online_ids(users.keys)
     {
@@ -122,7 +136,7 @@ class Conversation < ApplicationRecord
       owner_id:     owner_id,
       can_manage:   !dm? && !lobby? && owner?(viewer.uid),
       can_moderate: can_moderate?(viewer),
-      member_count: members.size,
+      member_count: total,
       members:      members.compact_map { |m|
         users[m.user_id]?.try { |u|
           {user: u.summary_json, role: m.role, online: online.includes?(u.uid), last_read_message_id: m.last_read_message_id}

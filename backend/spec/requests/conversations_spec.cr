@@ -79,6 +79,30 @@ describe "conversations API" do
     end
   end
 
+  it "lists at most MEMBERS_SHOWN members of a huge conversation, viewer included" do
+    with_app do |app|
+      lobby = Conversation.lobby
+      db = Saci::Record.connection
+      Saci::Record.exec_compat(db,
+        "INSERT INTO users (name, username, email, password_digest, role, xp, level, created_at, updated_at) " \
+        "SELECT 'Crowd ' || n, 'crowd_' || n, 'crowd_' || n || '@spec.local', 'x', 'member', 0, 1, now(), now() " \
+        "FROM generate_series(1, 210) AS n")
+      Saci::Record.exec_compat(db,
+        "INSERT INTO memberships (conversation_id, user_id, role, last_read_message_id, created_at, updated_at) " \
+        "SELECT #{lobby.cid}, id, 'member', 0, now(), now() FROM users WHERE username LIKE 'crowd_%'")
+      zed = Fixtures.user("zed")
+      Membership.ensure!(lobby.cid, zed.uid) # joins last: would not make the first 200 by id
+
+      detail = Fixtures.browser(app, zed).json("/api/conversations/#{lobby.cid}")["conversation"]
+      total = Membership.where(conversation_id: lobby.cid).count
+      total.should be > Conversation::MEMBERS_SHOWN
+      detail["member_count"].as_i64.should eq(total)
+      members = detail["members"].as_a
+      members.size.should eq(Conversation::MEMBERS_SHOWN)
+      members.first["user"]["id"].as_i64.should eq(zed.uid)
+    end
+  end
+
   it "moves the read cursor" do
     with_app do |app|
       bob = Fixtures.user("bob")
