@@ -1,15 +1,25 @@
-# Braxy edge: TLS (automatic HTTPS for BRAXY_DOMAIN), the static SPA and a
-# reverse proxy to the backend processes.
+# Braxy edge: TLS (automatic HTTPS for BRAXY_SITE_ADDRESS), the static SPA
+# and a reverse proxy to the backend processes.
 #
-#   BRAXY_DOMAIN   public host name (e.g. chat.example.com); ":80" disables
-#                  TLS for local tests behind another proxy
-#   ACME_EMAIL     contact for Let's Encrypt
-#   BACKEND_ADDR   backend host:port (default backend:3000)
+#   BRAXY_SITE_ADDRESS     site address: the public host name (e.g.
+#                          chat.example.com), or ":80" to serve plain HTTP
+#                          behind another proxy that terminates TLS
+#   BRAXY_TRUSTED_PROXIES  peers whose X-Forwarded-* headers are believed
+#                          (CIDRs or "private_ranges"); only set it behind
+#                          another proxy that overwrites X-Forwarded-For
+#   ACME_EMAIL             contact for Let's Encrypt
+#   BACKEND_ADDR           backend host:port (default backend:3000)
 {
 	email {$ACME_EMAIL:admin@example.com}
+	servers {
+		trusted_proxies static {$BRAXY_TRUSTED_PROXIES:127.0.0.1/32}
+		# Read X-Forwarded-For right to left, stopping at the first
+		# untrusted hop, so a value the client wrote itself is never used.
+		trusted_proxies_strict
+	}
 }
 
-{$BRAXY_DOMAIN:localhost} {
+{$BRAXY_SITE_ADDRESS:localhost} {
 	encode zstd gzip
 
 	@backend path /api/* /cable /cable/* /up
@@ -23,9 +33,11 @@
 			# refused during a rolling restart.
 			lb_try_duration 5s
 			# The rate limits key on the first X-Forwarded-For value, so it is
-			# overwritten with the real peer address, never appended to.
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
+			# overwritten with the client address, never appended to. That is
+			# the peer itself, or what a trusted proxy reported (see servers).
+			header_up X-Forwarded-For {client_ip}
+			# X-Forwarded-Proto: Caddy's default, the request scheme, or the
+			# value a trusted proxy sent (https when it terminates TLS).
 			health_uri /up
 			health_interval 10s
 		}

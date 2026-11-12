@@ -1,0 +1,25 @@
+# Braxy on a host shared with other apps: kamal-proxy owns ports 80/443,
+# terminates TLS and routes braxy's host name to the web service here.
+#
+#   docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.edge.yml \
+#     --env-file .env.prod up -d --build --wait
+#
+# The route itself is registered once in kamal-proxy (see docs/deploy.md).
+services:
+  web:
+    environment:
+      # Plain HTTP inside the Docker network; kamal-proxy does HTTPS.
+      BRAXY_SITE_ADDRESS: ":80"
+      # kamal-proxy reaches web from the kamal network and overwrites
+      # X-Forwarded-For with the client address (no published ports, so no
+      # one else can reach web).
+      BRAXY_TRUSTED_PROXIES: private_ranges
+    ports: !reset []
+    networks:
+      default:
+      kamal:
+        aliases: [braxy-web]
+
+networks:
+  kamal:
+    external: true

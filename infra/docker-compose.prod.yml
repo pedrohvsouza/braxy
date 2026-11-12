@@ -5,6 +5,10 @@
 #
 # Only the proxy (web) publishes ports. The backend is reachable through it
 # alone: the rate limits trust the X-Forwarded-For the proxy writes.
+#
+# On a host shared with other apps behind kamal-proxy, add the edge override
+# (infra/docker-compose.edge.yml): web then publishes nothing and kamal-proxy
+# terminates TLS in front of it.
 name: ${COMPOSE_PROJECT_NAME:-braxy-prod}
 
 x-backend-env: &backend-env
@@ -120,7 +124,7 @@ services:
         BRAXY_GIT_SHA: ${BRAXY_GIT_SHA:-dev}
     restart: unless-stopped
     environment:
-      BRAXY_DOMAIN: ${BRAXY_DOMAIN:?set BRAXY_DOMAIN}
+      BRAXY_SITE_ADDRESS: ${BRAXY_DOMAIN:?set BRAXY_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
       BACKEND_ADDR: backend:3000
     ports:

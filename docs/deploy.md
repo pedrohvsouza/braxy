@@ -4,7 +4,7 @@ Stack em `infra/docker-compose.prod.yml`:
 
 | Serviço | O que faz |
 |---|---|
-| `web` | Caddy: HTTPS automático (Let's Encrypt), serve o SPA e faz proxy de `/api`, `/cable` e `/up` para o backend. Único serviço com portas publicadas (80, 443 e 443/udp). |
+| `web` | Caddy: HTTPS automático (Let's Encrypt), serve o SPA e faz proxy de `/api`, `/cable` e `/up` para o backend. Único serviço com portas publicadas (80, 443 e 443/udp), exceto atrás do kamal-proxy (ver "Servidor compartilhado"). |
 | `backend` | Binário release single-thread, `WEB_CONCURRENCY` processos na mesma porta (`bin/multi`, `SO_REUSEPORT`). Sem portas publicadas. |
 | `migrate` | Roda `saci-migrate up` uma vez; o backend só sobe depois que ele termina com sucesso. |
 | `pg`, `redis` | Postgres 16 e Redis 7 com volumes próprios. |
@@ -40,6 +40,36 @@ O `migrate` roda antes do backend novo. As migrações precisam ser compatíveis
 com a versão anterior, que segue no ar até o backend novo ficar saudável.
 O `SIGTERM` drena as conexões (até 15 s, `stop_grace_period` de 20 s).
 
+## Servidor compartilhado (kamal-proxy na frente)
+
+Quando o servidor também hospeda outros apps, quem fica nas portas 80 e 443 é o
+[kamal-proxy](https://github.com/basecamp/kamal-proxy): ele termina o TLS
+(Let's Encrypt) e escolhe o app pelo domínio. O `web` do Braxy passa a servir
+HTTP puro na rede Docker `kamal`, sem publicar portas. Basta somar o override
+`infra/docker-compose.edge.yml` em **todos** os comandos do compose:
+
+```sh
+docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.edge.yml \
+  --env-file .env.prod up -d --build --wait
+```
+
+Sem o override, o `web` tenta publicar 80/443, que já estão com o kamal-proxy, e não sobe.
+
+A rota do Braxy é registrada uma vez no kamal-proxy (ele guarda as rotas entre
+reinícios):
+
+```sh
+docker exec kamal-proxy kamal-proxy deploy braxy --target braxy-web:80 \
+  --host "$BRAXY_DOMAIN" --tls --health-check-path /up
+```
+
+Como o `--tls` está ligado e o `--forward-headers` não, o kamal-proxy
+**sobrescreve** `X-Forwarded-For` com o IP do cliente e manda
+`X-Forwarded-Proto: https`. O Caddy confia nele (`BRAXY_TRUSTED_PROXIES`) e
+repassa esse IP ao backend, então o rate limit e o `force_ssl` continuam
+corretos. Não ligue `--forward-headers` nessa rota: com ele, um
+`X-Forwarded-For` enviado pelo cliente chegaria ao backend.
+
 **Saci:** o build usa o contexto `saci` (padrão: `master` do GitHub). Para um
 build reproduzível, fixe um commit em `SACI_CONTEXT`
 (`https://github.com/pedrohvsouza/saci.git#<sha>`). Para usar o checkout local:
@@ -53,12 +83,14 @@ e troque o `--build` por `docker compose ... pull && docker compose ... up -d --
 
 - **O backend não pode ficar exposto sem o proxy.** O rate limit identifica o
   cliente pelo primeiro valor de `X-Forwarded-For`. O Caddy **sobrescreve** esse
-  cabeçalho com o IP real (`header_up X-Forwarded-For {remote_host}`). Se o
+  cabeçalho com o IP real (`header_up X-Forwarded-For {client_ip}`: o IP de
+  quem conectou, ou o que um proxy confiável em `BRAXY_TRUSTED_PROXIES` informou). Se o
   cliente chegar direto no backend, ou por outro proxy que só acrescente ao
   cabeçalho recebido, qualquer um fura o limite do login falsificando o
   `X-Forwarded-For`. Por isso o `backend` não publica portas. Se houver um load
   balancer na frente do Caddy, ele também precisa sobrescrever o cabeçalho, e
-  o Caddy deve repassar o IP que o LB informar (`trusted_proxies`).
+  o Caddy deve confiar nele (`BRAXY_TRUSTED_PROXIES`). É o caso do kamal-proxy
+  (ver "Servidor compartilhado").
 - Cookies: em produção a sessão é cifrada e sai com `Secure; HttpOnly;
   SameSite=Lax`. O `force_ssl` redireciona para HTTPS conforme o
   `X-Forwarded-Proto` que o Caddy envia.
