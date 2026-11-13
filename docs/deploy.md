@@ -55,6 +55,11 @@ docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.edge.yml
 
 Sem o override, o `web` tenta publicar 80/443, que já estão com o kamal-proxy, e não sobe.
 
+A rede `kamal` precisa ter IPv6 (`docker network create --ipv6 kamal`, antes do
+primeiro `kamal proxy boot`). Numa rede só IPv4, o Docker repassa as conexões IPv6
+por um proxy em userland, e todo visitante IPv6 chega com o IP do gateway da rede
+(o rate limit vira um balde só). Com IPv6 na rede, o IP de origem é preservado.
+
 A rota do Braxy é registrada uma vez no kamal-proxy (ele guarda as rotas entre
 reinícios):
 
